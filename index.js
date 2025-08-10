@@ -1,20 +1,23 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import routes from './routes/index.js';
+import { scrapeFATF } from './scraper/fatf.js';
 
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use('/api', routes);
-
-app.get('/', (req, res) => {
-  res.send('ComplianceWatch backend is running.');
+app.get('/api/scrape/fatf', async (req, res) => {
+  try {
+    const data = await scrapeFATF();
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Error in FATF scraper:', error.message);
+    res.status(500).json({ error: 'Scraping failed: ' + error.message });
+  }
 });
 
-app.listen(port, () => {
-  console.log(`ComplianceWatch backend listening on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`✅ ComplianceWatch backend listening on port ${PORT}`);
 });
 
