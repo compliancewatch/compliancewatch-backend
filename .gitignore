@@ -1,0 +1,17 @@
+# Environment
+.env*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Node
+node_modules/
+dist/
+
+# Debug files
+*.html
+*.png
+*.json
+.DS_Store

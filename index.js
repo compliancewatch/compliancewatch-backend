@@ -1,23 +1,52 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import { scrapeFATF } from './scraper/fatf.js';
+// index.js
+require('dotenv').config({ path: `.env.${process.env.NODE_ENV || 'development'}` });
+const logger = require('./utils/logger');
+const scheduler = require('./services/scheduler');
+const telegramBot = require('./services/telegram-bot');
+const database = require('./services/database');
 
-dotenv.config();
+class Application {
+  constructor() {
+    process.on('unhandledRejection', (reason) => {
+      logger.error('Unhandled Rejection:', reason);
+    });
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+    process.on('uncaughtException', (error) => {
+      logger.error('Uncaught Exception:', error);
+      this.shutdown(1);
+    });
 
-app.get('/api/scrape/fatf', async (req, res) => {
-  try {
-    const data = await scrapeFATF();
-    res.json(data);
-  } catch (error) {
-    console.error('❌ Error in FATF scraper:', error.message);
-    res.status(500).json({ error: 'Scraping failed: ' + error.message });
+    process.on('SIGTERM', () => this.shutdown());
+    process.on('SIGINT', () => this.shutdown());
   }
-});
 
-app.listen(PORT, () => {
-  console.log(`✅ ComplianceWatch backend listening on port ${PORT}`);
-});
+  async start() {
+    try {
+      logger.info('Starting application...');
+      
+      // Verify database connection
+      if (!await database.testConnection()) {
+        throw new Error('Database connection failed');
+      }
+      
+      // Start services
+      telegramBot.start();
+      scheduler.init();
+      
+      logger.info('Application started successfully');
+    } catch (error) {
+      logger.error('Application startup failed', error);
+      this.shutdown(1);
+    }
+  }
 
+  shutdown(code = 0) {
+    logger.info('Shutting down application...');
+    telegramBot.stop();
+    process.exit(code);
+  }
+}
+
+// Start the application
+const app = new Application();
+app.start();
