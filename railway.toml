@@ -1,11 +1,5 @@
 [build]
-builder = "nixpacks"
+builder = "dockerfile"
 
-[[build.buildpacks]]
-url = "ghcr.io/railwayapp/buildpacks/nodejs@18"
-
-[build.args]
-NPM_VERSION = "9.9.4"  # Matches your local npm
-
-[[build.buildpacks]]
-url = "ghcr.io/railwayapp/buildpacks/chromium@stable"
+[deploy]
+start_command = "npm start"
