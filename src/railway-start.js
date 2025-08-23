@@ -103,7 +103,8 @@ async function runScrapersByType(targets, typeName) {
   return { successCount, failCount, results };
 }
 
-export async function runAllScrapers() {
+// REMOVE THE DUPLICATE EXPORT - KEEP ONLY THIS ONE
+async function runAllScrapers() {
   logger.info('🔄 Starting all scrapers...');
   
   const regulatoryResults = await runScrapersByType(REGULATORY_TARGETS, 'regulatory');
@@ -254,5 +255,5 @@ async function initializeApplication() {
 // Start the application
 initializeApplication();
 
-// Export for manual testing
-export { runAllScrapers, runScrapersByType };
+// REMOVE THE DUPLICATE EXPORT LINE - ONLY EXPORT ONCE
+// export { runAllScrapers, runScrapersByType };
