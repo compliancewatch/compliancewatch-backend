@@ -1,9 +1,10 @@
-// railway-start.js
-require('dotenv').config();
-const logger = require('./utils/logger');
-const db = require('./services/database');
-const telegram = require('./services/telegram-bot');
-const scheduler = require('./services/scheduler');
+// railway-start.js - ES Modules Version
+import './config/constants.js';
+import { logger } from './utils/logger.js';
+import { testConnection } from './services/database.js';
+import { startBot } from './services/telegram-bot.js';
+import { runScraper } from './scrapers/fatf.js';
+import nodeCron from 'node-cron';
 
 async function start() {
   try {
@@ -12,20 +13,14 @@ async function start() {
     if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('Telegram token missing');
 
     // Initialize services
-    await db.testConnection();
-    telegram.start();
-    scheduler.init();
+    await testConnection();
+    startBot();
+    
+    // Run scraper on schedule
+    nodeCron.schedule('0 9 * * *', runScraper); // Daily at 9 AM
 
     logger.info('🚀 Application started successfully');
     
-    // Health check endpoint
-    require('express')()
-      .get('/health', (req, res) => res.json({ 
-        status: 'OK', 
-        uptime: process.uptime() 
-      })
-      .listen(process.env.PORT || 3000);
-      
   } catch (error) {
     logger.error('❌ Startup failed', error);
     process.exit(1);
