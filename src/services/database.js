@@ -1,59 +1,53 @@
-// services/database.js
-const { createClient } = require('@supabase/supabase-js');
-const logger = require('../utils/logger');
+import { createClient } from '@supabase/supabase-js';
 
-class DatabaseService {
-  constructor() {
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
-      throw new Error('Supabase credentials not configured');
+// Create Supabase client
+export const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
+
+// Test connection function
+export async function testConnection() {
+  try {
+    const { data, error } = await supabase
+      .from('scraped_data')
+      .select('count')
+      .limit(1);
+
+    if (error) {
+      throw new Error(`Supabase connection failed: ${error.message}`);
     }
 
-    this.client = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_KEY,
-      {
-        auth: {
-          persistSession: false
-        },
-        db: {
-          schema: 'public'  // Explicitly set to public schema
-        }
-      }
-    );
-    this.tableName = process.env.SUPABASE_TABLE || 'scraped_data';
-  }
-
-  async testConnection() {
-    try {
-      const { data, error } = await this.client
-        .from(this.tableName)
-        .select('*')
-        .limit(1);
-
-      if (error) throw error;
-      logger.info(`✅ Connected to table: ${this.tableName}`);
-      return true;
-    } catch (error) {
-      logger.error('Database connection failed', {
-        error: error.message,
-        table: this.tableName,
-        supabaseUrl: process.env.SUPABASE_URL
-      });
-      return false;
-    }
-  }
-
-  // Add other methods using this.tableName instead of hardcoded table name
-  async getUnpostedUpdates(limit = 5) {
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .select('*')
-      .eq('is_posted', false)
-      .limit(limit);
-
-    if (error) throw error;
-    return data;
+    console.log('✅ Supabase connected successfully');
+    return { connected: true, data };
+  } catch (error) {
+    console.error('❌ Supabase connection error:', error.message);
+    throw error;
   }
 }
 
-module.exports = new DatabaseService();
+// Insert data function
+export async function insertScrapedData(source, data) {
+  try {
+    const { error } = await supabase
+      .from('scraped_data')
+      .insert({
+        source: source,
+        data: data,
+        scraped_at: new Date().toISOString()
+      });
+
+    if (error) {
+      throw new Error(`Database insert failed: ${error.message}`);
+    }
+
+    console.log(`✅ Data inserted for ${source}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Data insertion error:', error.message);
+    throw error;
+  }
+}
+
+// Export all functions
+export default { supabase, testConnection, insertScrapedData };
