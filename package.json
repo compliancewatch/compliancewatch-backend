@@ -5,10 +5,16 @@
   "type": "module",
   "scripts": {
     "start": "NODE_ENV=production node src/railway-start.js",
-    "scrape": "node src/scrapers/fatf.js",
+    "scrape": "node -e \"import('./src/railway-start.js').then(m => m.runAllScrapers())\"",
+    "scrape-regulatory": "node -e \"import('./src/railway-start.js').then(m => m.runScrapersByType(await import('./config/targets.js').then(t => t.REGULATORY_TARGETS), 'regulatory'))\"",
+    "scrape-business": "node -e \"import('./src/railway-start.js').then(m => m.runScrapersByType(await import('./config/targets.js').then(t => t.BUSINESS_TARGETS), 'business'))\"",
+    "scrape-crypto": "node -e \"import('./src/railway-start.js').then(m => m.runScrapersByType(await import('./config/targets.js').then(t => t.CRYPTO_TARGETS), 'crypto'))\"",
+    "scrape-fatf": "node -e \"import('./src/scrapers/fatf.js').then(m => m.runScraper())\"",
     "test": "node src/scripts/test-system.js",
     "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\"",
-    "build": "npm ci --omit=dev"
+    "build": "npm ci --omit=dev",
+    "logs": "railway logs",
+    "status": "railway status"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.8",
@@ -21,7 +27,7 @@
     "winston": "^3.11.0"
   },
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=20.0.0",
     "npm": ">=9.0.0"
   },
   "browserslist": {
