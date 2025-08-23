@@ -1,8 +1,11 @@
+// src/railway-start.js
 import { logger } from './utils/logger.js';
 import { testConnection } from './services/database.js';
 import { startBot } from './services/telegram-bot.js';
 import nodeCron from 'node-cron';
-import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS, ALL_TARGETS } from '../config/targets.js';
+
+// Import targets from config folder (root level)
+import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS, ALL_TARGETS } from '../../config/targets.js';
 
 // Import all scraper functions
 import { runUNSecurityCouncilScraper } from './scrapers/un-security-council.js';
@@ -103,7 +106,6 @@ async function runScrapersByType(targets, typeName) {
   return { successCount, failCount, results };
 }
 
-// REMOVE THE DUPLICATE EXPORT - KEEP ONLY THIS ONE
 async function runAllScrapers() {
   logger.info('🔄 Starting all scrapers...');
   
@@ -254,6 +256,3 @@ async function initializeApplication() {
 
 // Start the application
 initializeApplication();
-
-// REMOVE THE DUPLICATE EXPORT LINE - ONLY EXPORT ONCE
-// export { runAllScrapers, runScrapersByType };
