@@ -5,7 +5,7 @@ import { startBot } from './services/telegram-bot.js';
 import nodeCron from 'node-cron';
 
 // Import targets from config folder (root level)
-import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS, ALL_TARGETS } from '../../config/targets.js';
+import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS, ALL_TARGETS } from './../config/targets.js';
 
 // Import all scraper functions
 import { runUNSecurityCouncilScraper } from './scrapers/un-security-council.js';
