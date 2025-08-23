@@ -7,7 +7,7 @@ RUN npm ci --omit=dev && \
     npm cache clean --force
 
 # Stage 2: Runtime environment
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Install Chromium with all required dependencies
 RUN apk add --no-cache \
