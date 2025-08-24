@@ -4,7 +4,7 @@ import { handleAIMessage } from './ai-service.js';
 let botInstance = null;
 let botStarted = false;
 
-// Simple fetch-based Telegram sender to avoid bot conflicts
+// Simple fetch-based Telegram sender
 export async function sendTelegramAlert(message) {
   try {
     const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -20,12 +20,10 @@ export async function sendTelegramAlert(message) {
     });
     
     if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Telegram API error:', errorData);
+      console.error('Telegram API error:', await response.text());
       return false;
     }
     
-    console.log('✅ Telegram alert sent successfully');
     return true;
     
   } catch (error) {
@@ -34,23 +32,22 @@ export async function sendTelegramAlert(message) {
   }
 }
 
-// Enhanced bot startup with conflict prevention
 export function startBot() {
   if (botStarted) {
-    console.log('⚠️ Telegram bot already started, skipping...');
+    console.log('⚠️ Telegram bot already started');
     return;
   }
 
   try {
     botInstance = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-    // Basic commands with minimal functionality
+    // Basic commands
     botInstance.start((ctx) => {
-      ctx.reply('🚀 Welcome to ComplianceWatch AI Bot!\n\nI provide real-time compliance updates every 3 hours.\n\nUse /status for system info or ask me questions about regulations.');
+      ctx.reply('🚀 Welcome to ComplianceWatch AI Bot!\n\nI provide real-time compliance updates from 20+ sources every 3 hours.\n\nUse /status for system info or ask me questions about regulations.');
     });
 
     botInstance.help((ctx) => {
-      ctx.reply('🤖 Available Commands:\n/status - System status\n/latest - Recent updates\n/help - This message\n\nAsk me about:\n• FATF regulations\n• Compliance requirements\n• Regulatory updates');
+      ctx.reply('🤖 Available Commands:\n/status - System status\n/latest - Recent updates\n/help - This message\n\nAsk me about:\n• FATF regulations\n• Sanctions compliance\n• SEC requirements\n• Regulatory updates');
     });
 
     botInstance.command('status', (ctx) => {
@@ -74,7 +71,7 @@ export function startBot() {
           .from('scraped_data')
           .select('source, created_at')
           .order('created_at', { ascending: false })
-          .limit(3);
+          .limit(5);
 
         if (data && data.length > 0) {
           const updates = data.map(item => 
@@ -86,11 +83,11 @@ export function startBot() {
           ctx.reply('No updates available yet. Next update in 3 hours!');
         }
       } catch (error) {
-        ctx.reply('❌ Error fetching updates. System restarting...');
+        ctx.reply('❌ Error fetching updates. Please try again later.');
       }
     });
 
-    // AI response to any non-command message
+    // AI response to any message
     botInstance.on('text', async (ctx) => {
       if (!ctx.message.text.startsWith('/')) {
         try {
@@ -102,52 +99,21 @@ export function startBot() {
       }
     });
 
-    // Error handling for bot
-    botInstance.catch((error) => {
-      console.error('Telegram bot error:', error);
-    });
-
-    // Launch with comprehensive error handling
     botInstance.launch().then(() => {
       console.log('✅ Telegram bot started successfully');
       botStarted = true;
-      
-      // Send startup notification via API to avoid conflicts
-      sendTelegramAlert(
-        '🤖 ComplianceWatch System Online\n' +
-        '✅ All services operational\n' +
-        '📅 Updates every 3 hours\n' +
-        '🕒 ' + new Date().toLocaleString()
-      );
-      
     }).catch(error => {
       console.error('❌ Telegram bot failed to start:', error.message);
-      // Mark as not started to allow retries
       botStarted = false;
-      botInstance = null;
     });
 
   } catch (error) {
     console.error('❌ Failed to initialize Telegram bot:', error.message);
-    botStarted = false;
-    botInstance = null;
   }
 }
 
-// Graceful shutdown handling
-process.once('SIGINT', () => {
-  console.log('Shutting down Telegram bot (SIGINT)...');
-  if (botInstance) {
-    botInstance.stop('SIGINT');
-  }
-});
+// Graceful shutdown
+process.once('SIGINT', () => botInstance?.stop('SIGINT'));
+process.once('SIGTERM', () => botInstance?.stop('SIGTERM'));
 
-process.once('SIGTERM', () => {
-  console.log('Shutting down Telegram bot (SIGTERM)...');
-  if (botInstance) {
-    botInstance.stop('SIGTERM');
-  }
-});
-
-// Export functions
 export default { startBot, sendTelegramAlert };
