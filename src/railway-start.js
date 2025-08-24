@@ -3,8 +3,17 @@ import { testConnection } from './services/database.js';
 import { startBot } from './services/telegram-bot.js';
 import nodeCron from 'node-cron';
 
-// Import targets
-import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from '../../config/targets.js';
+// Import targets - FIXED PATH (choose one option below)
+// Option 1: If targets.js is in src/config/ folder
+import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from './config/targets.js';
+
+// Option 2: If targets.js is in root config/ folder (uncomment below)
+// import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from '../../config/targets.js';
+
+// Option 3: Temporary fallback if file not found (uncomment below)
+// const REGULATORY_TARGETS = [];
+// const BUSINESS_TARGETS = [];
+// const CRYPTO_TARGETS = [];
 
 // Import ALL scraper functions
 import { runUNSecurityCouncilScraper } from './scrapers/un-security-council.js';
@@ -90,34 +99,39 @@ async function runScrapersByType(targets, typeName) {
 }
 
 async function runAllScrapers() {
-  logger.info('🔄 Starting FULL scraping cycle (25+ sources)...');
-  
-  const results = await Promise.allSettled([
-    runScrapersByType(REGULATORY_TARGETS, 'Regulatory'),
-    runScrapersByType(BUSINESS_TARGETS, 'Business'),
-    runScrapersByType(CRYPTO_TARGETS, 'Crypto')
-  ]);
-
-  const totalSuccess = results.reduce((sum, result) => sum + (result.value?.successCount || 0), 0);
-  const totalFail = results.reduce((sum, result) => sum + (result.value?.failCount || 0), 0);
-
-  logger.info(`🎉 FULL cycle completed: ${totalSuccess} ✓, ${totalFail} ✗`);
-  
-  // Send summary to Telegram
   try {
-    const { sendTelegramAlert } = await import('./services/telegram-bot.js');
-    await sendTelegramAlert(
-      `📊 Full Scrape Complete\n` +
-      `✅ Regulatory: ${results[0].value?.successCount || 0}/${REGULATORY_TARGETS.length}\n` +
-      `✅ Business: ${results[1].value?.successCount || 0}/${BUSINESS_TARGETS.length}\n` +
-      `✅ Crypto: ${results[2].value?.successCount || 0}/${CRYPTO_TARGETS.length}\n` +
-      `🕒 ${new Date().toLocaleString()}`
-    );
+    logger.info('🔄 Starting FULL scraping cycle (25+ sources)...');
+    
+    const results = await Promise.allSettled([
+      runScrapersByType(REGULATORY_TARGETS, 'Regulatory'),
+      runScrapersByType(BUSINESS_TARGETS, 'Business'),
+      runScrapersByType(CRYPTO_TARGETS, 'Crypto')
+    ]);
+
+    const totalSuccess = results.reduce((sum, result) => sum + (result.value?.successCount || 0), 0);
+    const totalFail = results.reduce((sum, result) => sum + (result.value?.failCount || 0), 0);
+
+    logger.info(`🎉 FULL cycle completed: ${totalSuccess} ✓, ${totalFail} ✗`);
+    
+    // Send summary to Telegram
+    try {
+      const { sendTelegramAlert } = await import('./services/telegram-bot.js');
+      await sendTelegramAlert(
+        `📊 Full Scrape Complete\n` +
+        `✅ Regulatory: ${results[0].value?.successCount || 0}/${REGULATORY_TARGETS.length}\n` +
+        `✅ Business: ${results[1].value?.successCount || 0}/${BUSINESS_TARGETS.length}\n` +
+        `✅ Crypto: ${results[2].value?.successCount || 0}/${CRYPTO_TARGETS.length}\n` +
+        `🕒 ${new Date().toLocaleString()}`
+      );
+    } catch (error) {
+      logger.error('Failed to send Telegram summary:', error);
+    }
+    
+    return { totalSuccess, totalFail };
   } catch (error) {
-    logger.error('Failed to send Telegram summary:', error);
+    logger.error('runAllScrapers failed:', error);
+    return { totalSuccess: 0, totalFail: 1 };
   }
-  
-  return { totalSuccess, totalFail };
 }
 
 async function initializeApplication() {
@@ -158,8 +172,22 @@ async function initializeApplication() {
     
   } catch (error) {
     logger.error('❌ Application startup failed', error);
+    
+    // Try to send error notification via Telegram if basic services are up
+    try {
+      const { sendTelegramAlert } = await import('./services/telegram-bot.js');
+      await sendTelegramAlert(
+        `❌ Application Startup Failed\n` +
+        `Error: ${error.message}\n` +
+        `Time: ${new Date().toLocaleString()}`
+      );
+    } catch (telegramError) {
+      logger.error('Also failed to send Telegram alert:', telegramError);
+    }
+    
     process.exit(1);
   }
 }
 
+// Start the application
 initializeApplication();
