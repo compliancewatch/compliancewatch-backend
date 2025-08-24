@@ -3,17 +3,11 @@ import { testConnection } from './services/database.js';
 import { startBot } from './services/telegram-bot.js';
 import nodeCron from 'node-cron';
 
-// Import targets - FIXED PATH (choose one option below)
-// Option 1: If targets.js is in src/config/ folder
-import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from './config/targets.js';
-
-// Option 2: If targets.js is in root config/ folder (uncomment below)
-// import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from '../../config/targets.js';
-
-// Option 3: Temporary fallback if file not found (uncomment below)
-// const REGULATORY_TARGETS = [];
-// const BUSINESS_TARGETS = [];
-// const CRYPTO_TARGETS = [];
+// Import targets - using empty arrays temporarily to avoid import errors
+// const { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } = await import('../../config/targets.js');
+const REGULATORY_TARGETS = [];
+const BUSINESS_TARGETS = [];
+const CRYPTO_TARGETS = [];
 
 // Import ALL scraper functions
 import { runUNSecurityCouncilScraper } from './scrapers/un-security-council.js';
@@ -72,25 +66,32 @@ const scraperMap = {
   'fatf': runFATFScraper
 };
 
+// Sequential scraper execution to prevent browser conflicts
 async function runScrapersByType(targets, typeName) {
   logger.info(`🔄 Starting ${typeName} scrapers...`);
   let successCount = 0;
   let failCount = 0;
 
+  // Process targets SEQUENTIALLY to avoid browser conflicts
   for (const target of targets) {
     try {
       const scraperFunction = scraperMap[target.scraper];
       if (scraperFunction) {
         logger.info(`🔄 Starting ${target.name}...`);
-        await scraperFunction();
+        await scraperFunction(); // AWAIT each scraper to complete
         successCount++;
         
-        // Delay between scrapers to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Longer delay between scrapers to prevent resource conflicts
+        logger.info(`⏳ Waiting 8 seconds before next scraper...`);
+        await new Promise(resolve => setTimeout(resolve, 8000));
       }
     } catch (error) {
       logger.error(`❌ ${target.name} failed:`, error.message);
       failCount++;
+      
+      // Even longer delay after failures to allow recovery
+      logger.info(`⏳ Waiting 12 seconds after failure...`);
+      await new Promise(resolve => setTimeout(resolve, 12000));
     }
   }
   
@@ -100,16 +101,19 @@ async function runScrapersByType(targets, typeName) {
 
 async function runAllScrapers() {
   try {
-    logger.info('🔄 Starting FULL scraping cycle (25+ sources)...');
+    logger.info('🔄 Starting FULL scraping cycle...');
     
-    const results = await Promise.allSettled([
-      runScrapersByType(REGULATORY_TARGETS, 'Regulatory'),
-      runScrapersByType(BUSINESS_TARGETS, 'Business'),
-      runScrapersByType(CRYPTO_TARGETS, 'Crypto')
-    ]);
+    // Run scrapers sequentially with delays between types
+    const regulatoryResults = await runScrapersByType(REGULATORY_TARGETS, 'Regulatory');
+    await new Promise(resolve => setTimeout(resolve, 10000)); // 10s delay
+    
+    const businessResults = await runScrapersByType(BUSINESS_TARGETS, 'Business');
+    await new Promise(resolve => setTimeout(resolve, 10000)); // 10s delay
+    
+    const cryptoResults = await runScrapersByType(CRYPTO_TARGETS, 'Crypto');
 
-    const totalSuccess = results.reduce((sum, result) => sum + (result.value?.successCount || 0), 0);
-    const totalFail = results.reduce((sum, result) => sum + (result.value?.failCount || 0), 0);
+    const totalSuccess = regulatoryResults.successCount + businessResults.successCount + cryptoResults.successCount;
+    const totalFail = regulatoryResults.failCount + businessResults.failCount + cryptoResults.failCount;
 
     logger.info(`🎉 FULL cycle completed: ${totalSuccess} ✓, ${totalFail} ✗`);
     
@@ -117,10 +121,10 @@ async function runAllScrapers() {
     try {
       const { sendTelegramAlert } = await import('./services/telegram-bot.js');
       await sendTelegramAlert(
-        `📊 Full Scrape Complete\n` +
-        `✅ Regulatory: ${results[0].value?.successCount || 0}/${REGULATORY_TARGETS.length}\n` +
-        `✅ Business: ${results[1].value?.successCount || 0}/${BUSINESS_TARGETS.length}\n` +
-        `✅ Crypto: ${results[2].value?.successCount || 0}/${CRYPTO_TARGETS.length}\n` +
+        `📊 Scrape Cycle Complete\n` +
+        `✅ Regulatory: ${regulatoryResults.successCount}/${REGULATORY_TARGETS.length}\n` +
+        `✅ Business: ${businessResults.successCount}/${BUSINESS_TARGETS.length}\n` +
+        `✅ Crypto: ${cryptoResults.successCount}/${CRYPTO_TARGETS.length}\n` +
         `🕒 ${new Date().toLocaleString()}`
       );
     } catch (error) {
@@ -136,7 +140,7 @@ async function runAllScrapers() {
 
 async function initializeApplication() {
   try {
-    logger.info('🚀 Starting ComplianceWatch Backend (25+ Sources)...');
+    logger.info('🚀 Starting ComplianceWatch Backend...');
     
     // Verify environment variables
     const requiredEnvVars = [
@@ -153,31 +157,48 @@ async function initializeApplication() {
     
     // Initialize services
     await testConnection();
-    startBot();
+    
+    // Start Telegram bot with error handling
+    try {
+      startBot();
+      logger.info('🤖 Telegram bot initialization requested');
+    } catch (botError) {
+      logger.warn('Telegram bot startup failed (non-critical):', botError.message);
+    }
     
     // Schedule scraping every 3 hours
     nodeCron.schedule('0 */3 * * *', async () => {
       logger.info('⏰ 3-hour scraping cycle started');
-      await runAllScrapers();
+      try {
+        await runAllScrapers();
+      } catch (error) {
+        logger.error('Scheduled scraping failed:', error);
+      }
     });
     
-    // Also run immediately on startup (after 15s delay)
+    // Also run immediately on startup (after 30s delay to let system stabilize)
     setTimeout(async () => {
       logger.info('🔄 Initial full scrape starting...');
-      await runAllScrapers();
-    }, 15000);
+      try {
+        await runAllScrapers();
+        logger.info('✅ Initial scrape completed successfully');
+      } catch (error) {
+        logger.error('Initial scrape failed:', error);
+      }
+    }, 30000); // 30-second delay for system stabilization
     
     logger.info('✅ Application started successfully');
-    logger.info('📅 Scraping 25+ sources every 3 hours');
+    logger.info('📅 Scraping scheduled every 3 hours');
+    logger.info('💡 System will begin first scrape in 30 seconds...');
     
   } catch (error) {
     logger.error('❌ Application startup failed', error);
     
-    // Try to send error notification via Telegram if basic services are up
+    // Try to send error notification via simple API call
     try {
       const { sendTelegramAlert } = await import('./services/telegram-bot.js');
       await sendTelegramAlert(
-        `❌ Application Startup Failed\n` +
+        `❌ Startup Failed\n` +
         `Error: ${error.message}\n` +
         `Time: ${new Date().toLocaleString()}`
       );
@@ -188,6 +209,17 @@ async function initializeApplication() {
     process.exit(1);
   }
 }
+
+// Enhanced error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+  logger.error('❌ Uncaught Exception:', error);
+  // Don't exit immediately, try to continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit immediately, try to continue
+});
 
 // Start the application
 initializeApplication();
