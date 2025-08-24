@@ -1,7 +1,7 @@
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium-min';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
-import { runAISummarizer } from '../services/ai-service.js';
 
 export async function runGenericScraper(target) {
   let browser = null;
@@ -10,19 +10,13 @@ export async function runGenericScraper(target) {
   try {
     console.log(`🔄 Starting: ${target.name}`);
     
-    // Create NEW browser instance for each scraper (simplest solution)
+    // Railway-optimized browser launch
     browser = await puppeteer.launch({
-      executablePath: process.env.CHROMIUM_PATH,
-      headless: "new",
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--single-process',
-        '--no-zygote',
-        '--no-first-run'
-      ],
-      timeout: 30000
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
 
     page = await browser.newPage();
@@ -30,17 +24,17 @@ export async function runGenericScraper(target) {
     // Basic configuration
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
     await page.setViewport({ width: 1280, height: 800 });
-    page.setDefaultNavigationTimeout(30000);
-    page.setDefaultTimeout(15000);
+    page.setDefaultNavigationTimeout(60000);
+    page.setDefaultTimeout(30000);
 
     console.log(`🌐 Navigating to: ${target.url}`);
     await page.goto(target.url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 30000
+      waitUntil: 'networkidle2',
+      timeout: 60000
     });
 
     // Wait for page to load
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
 
     const scrapedData = await page.evaluate((target) => {
       try {
@@ -72,19 +66,13 @@ export async function runGenericScraper(target) {
 
       if (error) throw new Error(`Database error: ${error.message}`);
 
-      // AI Summarization
-      try {
-        await runAISummarizer(target.name);
-      } catch (aiError) {
-        console.error(`AI summary failed: ${aiError.message}`);
-        // Fallback notification
-        await sendTelegramAlert(
-          `✅ ${target.name} Update\n` +
-          `📋 ${scrapedData.length} items collected\n` +
-          `🕒 ${new Date().toLocaleString()}\n` +
-          `#${target.name.replace(/\s+/g, '')} #Update`
-        );
-      }
+      // Success notification
+      await sendTelegramAlert(
+        `✅ ${target.name} Update\n` +
+        `📋 ${scrapedData.length} items collected\n` +
+        `🕒 ${new Date().toLocaleString()}\n` +
+        `#${target.name.replace(/\s+/g, '')} #Update`
+      );
     }
 
     console.log(`✅ ${target.name} completed`);
@@ -100,7 +88,7 @@ export async function runGenericScraper(target) {
     throw error;
     
   } finally {
-    // Cleanup - close everything
+    // Cleanup
     if (page) {
       try {
         await page.close();
