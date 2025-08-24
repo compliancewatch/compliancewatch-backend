@@ -1,15 +1,10 @@
 import { logger } from './utils/logger.js';
 import { testConnection } from './services/database.js';
 import { startBot } from './services/telegram-bot.js';
-import { runAISummarizer } from './services/ai-service.js';
 import nodeCron from 'node-cron';
 
-// Import targets - CHOOSE THE CORRECT PATH FOR YOUR SETUP:
-// Option 1: If targets.js is in src/config/ (recommended)
-import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from './config/targets.js';
-
-// Option 2: If targets.js is in root config/ folder
-// import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from '../../config/targets.js';
+// Import targets
+import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from '../../config/targets.js';
 
 // Import ALL scraper functions
 import { runUNSecurityCouncilScraper } from './scrapers/un-security-council.js';
@@ -37,7 +32,7 @@ import { runScraper as runFATFScraper } from './scrapers/fatf.js';
 
 // Map ALL targets to scraper functions
 const scraperMap = {
-  // Regulatory (13 targets)
+  // Regulatory (13)
   'un-security-council': runUNSecurityCouncilScraper,
   'unctad': runUNCTADScraper,
   'sec': runSECScraper,
@@ -52,26 +47,26 @@ const scraperMap = {
   'mas-singapore': runMASSingaporeScraper,
   'cbrc-china': runCBRCChinaScraper,
   
-  // Business (4 targets)
+  // Business (4)
   'bloomberg': runBloombergScraper,
   'reuters': runReutersScraper,
   'financial-times': runFinancialTimesScraper,
   'yahoo-finance': runYahooFinanceScraper,
   
-  // Crypto (4 targets)
+  // Crypto (4)
   'coindesk': runCoinDeskScraper,
   'cointelegraph': runCoinTelegraphScraper,
   'cryptoslate': runCryptoSlateScraper,
   'the-block': runTheBlockScraper,
   
-  // Special (1 target)
+  // Special (1)
   'fatf': runFATFScraper
 };
 
 // Track active scrapers to prevent duplicates
 const activeScrapers = new Set();
 
-async function runScraperWithAI(target) {
+async function runScraperWithRetry(target) {
   if (activeScrapers.has(target.name)) {
     logger.warn(`⏩ ${target.name} already running, skipping...`);
     return { success: false, skipped: true };
@@ -88,26 +83,10 @@ async function runScraperWithAI(target) {
     }
 
     // Run the scraper
-    await scraperFunction();
+    const result = await scraperFunction();
     
-    // AI Summarization for ALL targets
-    logger.info(`🤖 Generating AI summary for ${target.name}...`);
-    const aiSuccess = await runAISummarizer(target.name);
-    
-    if (!aiSuccess) {
-      logger.warn(`⚠️ AI summary failed for ${target.name}, using fallback`);
-      // Fallback notification
-      const { sendTelegramAlert } = await import('./services/telegram-bot.js');
-      await sendTelegramAlert(
-        `📰 ${target.name} Update\n` +
-        `🕒 ${new Date().toLocaleString()}\n` +
-        `✅ Content scraped successfully\n` +
-        `#${target.type} #${target.name.replace(/\s+/g, '')}`
-      );
-    }
-    
-    logger.info(`✅ ${target.name} completed with AI summary`);
-    return { success: true };
+    logger.info(`✅ ${target.name} completed successfully`);
+    return { success: true, data: result };
 
   } catch (error) {
     logger.error(`❌ ${target.name} failed:`, error.message);
@@ -132,7 +111,7 @@ async function runScraperWithAI(target) {
   }
 }
 
-// Sequential scraper execution with AI integration
+// Sequential scraper execution
 async function runScrapersByType(targets, typeName) {
   logger.info(`🔄 Starting ${typeName} scrapers...`);
   let successCount = 0;
@@ -141,7 +120,7 @@ async function runScrapersByType(targets, typeName) {
 
   for (const target of targets) {
     try {
-      const result = await runScraperWithAI(target);
+      const result = await runScraperWithRetry(target);
       
       if (result.success) {
         successCount++;
@@ -167,7 +146,7 @@ async function runScrapersByType(targets, typeName) {
 
 async function runAllScrapers() {
   try {
-    logger.info('🔄 Starting FULL scraping cycle (20+ sources)...');
+    logger.info('🔄 Starting FULL scraping cycle...');
     logger.info(`📊 Targets: ${REGULATORY_TARGETS.length} Regulatory, ${BUSINESS_TARGETS.length} Business, ${CRYPTO_TARGETS.length} Crypto`);
     
     // Run scrapers sequentially with delays between types
@@ -232,7 +211,7 @@ async function initializeApplication() {
     // Verify environment variables
     const requiredEnvVars = [
       'SUPABASE_URL', 'SUPABASE_KEY', 'TELEGRAM_BOT_TOKEN',
-      'TELEGRAM_CHANNEL_ID', 'CHROMIUM_PATH'
+      'TELEGRAM_CHANNEL_ID'
     ];
     
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -250,7 +229,7 @@ async function initializeApplication() {
       startBot();
       logger.info('🤖 Telegram bot initialized');
     } catch (botError) {
-      logger.warn('Telegram bot startup issue (will use API fallback):', botError.message);
+      logger.warn('Telegram bot startup issue:', botError.message);
     }
     
     // Schedule scraping every 3 hours
@@ -276,7 +255,6 @@ async function initializeApplication() {
     
     logger.info('✅ Application started successfully');
     logger.info('📅 Automated scraping: Every 3 hours');
-    logger.info('🤖 AI Summaries: Enabled for all targets');
     logger.info('💬 Telegram Alerts: Professional format with hashtags');
     
     // Startup notification
@@ -287,7 +265,6 @@ async function initializeApplication() {
         `✅ All services operational\n` +
         `📊 ${REGULATORY_TARGETS.length + BUSINESS_TARGETS.length + CRYPTO_TARGETS.length} sources configured\n` +
         `⏰ Updates every 3 hours\n` +
-        `🤖 AI-powered summaries enabled\n` +
         `🕒 ${new Date().toLocaleString()}\n` +
         `#SystemOnline #ComplianceAI`
       );
