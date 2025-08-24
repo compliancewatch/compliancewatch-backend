@@ -11,7 +11,7 @@ export async function runScraper() {
     
     browser = await puppeteer.launch({
       executablePath: process.env.CHROMIUM_PATH,
-      headless: true,
+      headless: "new", // Fix deprecation warning
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
@@ -32,21 +32,27 @@ export async function runScraper() {
 
     console.log(`📊 Found ${fatfData.length} FATF entries`);
 
-    // Save to Supabase
+    // Save to Supabase - USE CORRECT COLUMN NAMES
     const { error } = await supabase
       .from('scraped_data')
       .insert({
         source: 'FATF High-Risk Jurisdictions',
         data: fatfData,
-        scraped_at: new Date().toISOString()
+        created_at: new Date().toISOString(), // Use created_at instead of scraped_at
+        updated_at: new Date().toISOString()
       });
 
     if (error) {
+      console.error('Database error details:', error);
       throw new Error(`Database error: ${error.message}`);
     }
 
     // Generate AI summary and send to Telegram
-    await runAISummarizer('FATF High-Risk Jurisdictions');
+    if (fatfData.length > 0) {
+      await runAISummarizer('FATF High-Risk Jurisdictions');
+    } else {
+      await sendTelegramAlert('⚠️ FATF Update: No new high-risk jurisdictions found in latest scan.');
+    }
     
     console.log('✅ FATF scraping completed');
     return fatfData;
