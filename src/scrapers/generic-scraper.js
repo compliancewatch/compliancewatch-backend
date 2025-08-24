@@ -1,50 +1,67 @@
 import puppeteer from 'puppeteer';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
-import { runAISummarizer } from '../services/ai-service.js'; // ← ADD AI IMPORT
+import { runAISummarizer } from '../services/ai-service.js';
 
-// Global browser instance with better management
+// Global browser instance with robust management
 let browserInstance = null;
-let scrapeCount = 0;
-const MAX_SCRAPES_BEFORE_RESTART = 15;
+let browserRestartCount = 0;
+const MAX_BROWSER_RESTARTS = 5;
 
 async function getBrowser() {
   if (!browserInstance) {
-    browserInstance = await puppeteer.launch({
-      executablePath: process.env.CHROMIUM_PATH,
-      headless: "new",
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ],
-      timeout: 60000
-    });
-    
-    // Handle browser cleanup
-    browserInstance.on('disconnected', () => {
-      console.log('Browser disconnected, cleaning up...');
+    try {
+      browserInstance = await puppeteer.launch({
+        executablePath: process.env.CHROMIUM_PATH,
+        headless: "new",
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-gpu',
+          '--remote-debugging-port=0'
+        ],
+        timeout: 30000
+      });
+      
+      console.log('✅ Browser instance created');
+      
+      browserInstance.on('disconnected', () => {
+        console.log('⚠️ Browser disconnected unexpectedly');
+        browserInstance = null;
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to create browser:', error.message);
       browserInstance = null;
-    });
+      throw error;
+    }
   }
   
-  // Restart browser periodically to prevent memory leaks
-  scrapeCount++;
-  if (scrapeCount >= MAX_SCRAPES_BEFORE_RESTART) {
-    console.log('🔄 Restarting browser to prevent memory leaks...');
-    if (browserInstance) {
-      await browserInstance.close();
-    }
+  // Check if browser is still connected and usable
+  if (browserInstance && !browserInstance.connected) {
+    console.log('⚠️ Browser not connected, recreating...');
     browserInstance = null;
-    scrapeCount = 0;
+    return getBrowser();
   }
   
   return browserInstance;
+}
+
+async function closeBrowser() {
+  if (browserInstance) {
+    try {
+      await browserInstance.close();
+      console.log('✅ Browser closed gracefully');
+    } catch (error) {
+      console.error('Error closing browser:', error.message);
+    }
+    browserInstance = null;
+  }
 }
 
 export async function runGenericScraper(target) {
@@ -54,183 +71,88 @@ export async function runGenericScraper(target) {
     
     const browser = await getBrowser();
     
-    // Check if browser is still connected
-    if (!browser.connected) {
-      console.log('Browser disconnected, recreating...');
-      browserInstance = null;
-      return runGenericScraper(target); // Retry with new browser
+    // Additional safety check
+    if (!browser || !browser.connected) {
+      throw new Error('Browser not available or disconnected');
     }
 
     page = await browser.newPage();
     
-    // Enhanced browser configuration
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await page.setViewport({ width: 1920, height: 1080 });
+    // Set realistic timeouts
+    page.setDefaultNavigationTimeout(30000);
+    page.setDefaultTimeout(15000);
     
-    // Block unnecessary resources for faster loading
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
-      const resourceType = request.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
-        request.abort();
-      } else {
-        request.continue();
-      }
-    });
-
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    await page.setViewport({ width: 1280, height: 800 });
+    
     console.log(`🌐 Navigating to: ${target.url}`);
     await page.goto(target.url, { 
       waitUntil: 'domcontentloaded',
-      timeout: 60000
+      timeout: 30000
     });
 
-    // Wait for page to stabilize
-    await page.waitForTimeout(3000);
-
-    // Try to wait for selectors if specified
-    if (target.titleSelector) {
-      try {
-        await page.waitForSelector(target.titleSelector, { 
-          timeout: 10000,
-          visible: true 
-        });
-      } catch (selectorError) {
-        console.warn(`Selector ${target.titleSelector} not found, continuing anyway...`);
-      }
-    }
+    await page.waitForTimeout(2000);
 
     const scrapedData = await page.evaluate((target) => {
       try {
-        const titles = Array.from(document.querySelectorAll(target.titleSelector || 'h1, h2, h3, h4, h5, h6, a'));
-        const dates = Array.from(document.querySelectorAll(target.dateSelector || 'time, .date, [datetime], .timestamp'));
+        const titles = Array.from(document.querySelectorAll(target.titleSelector || 'h1, h2, h3, a'));
+        const dates = Array.from(document.querySelectorAll(target.dateSelector || 'time, .date'));
         
-        const results = [];
-        const maxItems = 15; // Limit to prevent too many items
-        
-        for (let i = 0; i < Math.min(titles.length, maxItems); i++) {
-          const titleEl = titles[i];
-          const dateEl = dates[i] || dates[0]; // Fallback to first date if available
-          
-          if (titleEl && titleEl.textContent.trim()) {
-            results.push({
-              title: titleEl.textContent.trim(),
-              url: titleEl.href || window.location.href,
-              date: dateEl ? dateEl.textContent.trim() : new Date().toLocaleDateString(),
-              source: target.name,
-              language: target.language || 'en',
-              type: target.type || 'general'
-            });
-          }
-        }
-        
-        return results;
+        return titles.slice(0, 10).map((titleEl, index) => ({
+          title: titleEl.textContent.trim(),
+          url: titleEl.href || window.location.href,
+          date: dates[index] ? dates[index].textContent.trim() : new Date().toLocaleDateString(),
+          source: target.name
+        }));
       } catch (e) {
         console.error('Page evaluation error:', e);
-        return [{ 
-          title: 'Error during content extraction', 
-          source: target.name,
-          error: e.message 
-        }];
+        return [];
       }
     }, target);
 
     console.log(`📊 ${target.name}: Found ${scrapedData.length} items`);
 
-    // Filter out error items and empty data
-    const validData = scrapedData.filter(item => 
-      item.title && !item.title.includes('Error during') && item.title.trim().length > 5
-    );
-
-    if (validData.length > 0) {
-      // Save to database
+    if (scrapedData.length > 0) {
       const { error } = await supabase
         .from('scraped_data')
         .insert({
           source: target.name,
-          data: validData,
-          created_at: new Date().toISOString(),
-          item_count: validData.length,
-          type: target.type,
-          language: target.language,
-          status: 'success'
+          data: scrapedData,
+          created_at: new Date().toISOString()
         });
 
-      if (error) {
-        console.error('Database error:', error);
-        throw new Error(`Database error: ${error.message}`);
-      }
+      if (error) throw new Error(`Database error: ${error.message}`);
 
-      // ✅ USE AI SUMMARIZATION (like FATF scraper)
+      // Try AI summary, but don't let it break the scraper
       try {
-        console.log(`🤖 Generating AI summary for ${target.name}...`);
-        const aiSuccess = await runAISummarizer(target.name);
-        
-        if (!aiSuccess) {
-          // Fallback to basic notification if AI fails
-          await sendTelegramAlert(
-            `✅ ${target.name} Update\n` +
-            `📋 ${validData.length} new items found\n` +
-            `🕒 ${new Date().toLocaleString()}\n` +
-            `#${target.name.replace(/\s+/g, '')} #${target.type}`
-          );
-        }
+        await runAISummarizer(target.name);
       } catch (aiError) {
-        console.error(`AI summarization failed for ${target.name}:`, aiError);
-        // Fallback notification
-        await sendTelegramAlert(
-          `📰 ${target.name} Update\n` +
-          `📊 ${validData.length} items processed\n` +
-          `🕒 ${new Date().toLocaleString()}\n` +
-          `#${target.type} #Update`
-        );
+        console.error(`AI summary failed for ${target.name}:`, aiError.message);
+        // Continue without AI - not critical
       }
-    } else {
-      console.log(`⚠️ ${target.name}: No valid data found`);
-      
-      // Still save to track scraping attempts
-      await supabase
-        .from('scraped_data')
-        .insert({
-          source: target.name,
-          data: [],
-          created_at: new Date().toISOString(),
-          item_count: 0,
-          status: 'no_data'
-        });
     }
 
-    console.log(`✅ ${target.name} completed successfully`);
-    return validData;
+    console.log(`✅ ${target.name} completed`);
+    return scrapedData;
 
   } catch (error) {
     console.error(`❌ ${target.name} error:`, error.message);
     
-    // Save error to database
-    try {
-      await supabase
-        .from('scraped_data')
-        .insert({
-          source: target.name,
-          data: [],
-          created_at: new Date().toISOString(),
-          status: 'error',
-          error_message: error.message
-        });
-    } catch (dbError) {
-      console.error('Failed to save error to database:', dbError);
+    // Close browser on error to clean up
+    await closeBrowser();
+    browserRestartCount++;
+    
+    if (browserRestartCount >= MAX_BROWSER_RESTARTS) {
+      console.error('❌ Too many browser restarts, stopping...');
+      process.exit(1);
     }
     
-    // Send error notification
     await sendTelegramAlert(
-      `❌ ${target.name} Failed\n` +
-      `Error: ${error.message}\n` +
-      `Time: ${new Date().toLocaleString()}\n` +
-      `#Error #${target.type}`
+      `❌ ${target.name} Failed\nError: ${error.message}\nTime: ${new Date().toLocaleString()}`
     );
     
     throw error;
   } finally {
-    // Clean up page
     if (page && !page.isClosed()) {
       try {
         await page.close();
@@ -241,19 +163,15 @@ export async function runGenericScraper(target) {
   }
 }
 
-// Graceful shutdown handling
+// Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
-  if (browserInstance) {
-    await browserInstance.close();
-  }
+  await closeBrowser();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('Received SIGTERM, shutting down...');
-  if (browserInstance) {
-    await browserInstance.close();
-  }
+  await closeBrowser();
   process.exit(0);
 });
