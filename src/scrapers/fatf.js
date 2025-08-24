@@ -1,7 +1,7 @@
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium-min';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
-import { runAISummarizer } from '../services/ai-service.js';
 
 export async function runScraper() {
   let browser = null;
@@ -10,48 +10,58 @@ export async function runScraper() {
   try {
     console.log('🔄 Starting FATF scraper...');
     
-    // New browser instance for each run
+    // Railway-optimized browser
     browser = await puppeteer.launch({
-      executablePath: process.env.CHROMIUM_PATH,
-      headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      timeout: 30000
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
 
     page = await browser.newPage();
     await page.goto('https://www.fatf-gafi.org/en/high-risk/', { 
-      waitUntil: 'domcontentloaded',
-      timeout: 30000
+      waitUntil: 'networkidle2',
+      timeout: 60000
     });
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
 
     const fatfData = await page.evaluate(() => {
-      const items = Array.from(document.querySelectorAll('.high-risk-list li'));
-      return items.map(item => ({
-        country: item.querySelector('h4')?.textContent?.trim() || 'Unknown',
-        reason: item.querySelector('p')?.textContent?.trim() || 'No reason provided',
-        updated: new Date().toLocaleDateString()
-      }));
+      try {
+        const items = Array.from(document.querySelectorAll('.high-risk-list li'));
+        return items.map(item => ({
+          country: item.querySelector('h4')?.textContent?.trim() || 'Unknown',
+          reason: item.querySelector('p')?.textContent?.trim() || 'No reason provided',
+          updated: new Date().toLocaleDateString()
+        }));
+      } catch (e) {
+        console.error('FATF evaluation error:', e);
+        return [];
+      }
     });
 
     console.log(`📊 Found ${fatfData.length} FATF entries`);
 
-    const { error } = await supabase
-      .from('scraped_data')
-      .insert({
-        source: 'FATF High-Risk Jurisdictions',
-        data: fatfData,
-        created_at: new Date().toISOString()
-      });
-
-    if (error) throw new Error(`Database error: ${error.message}`);
-
-    // AI summary
     if (fatfData.length > 0) {
-      await runAISummarizer('FATF High-Risk Jurisdictions');
+      const { error } = await supabase
+        .from('scraped_data')
+        .insert({
+          source: 'FATF High-Risk Jurisdictions',
+          data: fatfData,
+          created_at: new Date().toISOString()
+        });
+
+      if (error) throw new Error(`Database error: ${error.message}`);
+
+      await sendTelegramAlert(
+        `🌍 FATF Update\n` +
+        `📋 ${fatfData.length} jurisdictions listed\n` +
+        `🕒 ${new Date().toLocaleString()}\n` +
+        `#FATF #Compliance #HighRisk`
+      );
     }
-    
+
     console.log('✅ FATF scraping completed');
     return fatfData;
 
