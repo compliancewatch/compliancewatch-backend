@@ -3,95 +3,44 @@ import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
 import { runAISummarizer } from '../services/ai-service.js';
 
-// Global browser instance with robust management
-let browserInstance = null;
-let browserRestartCount = 0;
-const MAX_BROWSER_RESTARTS = 5;
-
-async function getBrowser() {
-  if (!browserInstance) {
-    try {
-      browserInstance = await puppeteer.launch({
-        executablePath: process.env.CHROMIUM_PATH,
-        headless: "new",
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-gpu',
-          '--remote-debugging-port=0'
-        ],
-        timeout: 30000
-      });
-      
-      console.log('✅ Browser instance created');
-      
-      browserInstance.on('disconnected', () => {
-        console.log('⚠️ Browser disconnected unexpectedly');
-        browserInstance = null;
-      });
-      
-    } catch (error) {
-      console.error('❌ Failed to create browser:', error.message);
-      browserInstance = null;
-      throw error;
-    }
-  }
-  
-  // Check if browser is still connected and usable
-  if (browserInstance && !browserInstance.connected) {
-    console.log('⚠️ Browser not connected, recreating...');
-    browserInstance = null;
-    return getBrowser();
-  }
-  
-  return browserInstance;
-}
-
-async function closeBrowser() {
-  if (browserInstance) {
-    try {
-      await browserInstance.close();
-      console.log('✅ Browser closed gracefully');
-    } catch (error) {
-      console.error('Error closing browser:', error.message);
-    }
-    browserInstance = null;
-  }
-}
-
 export async function runGenericScraper(target) {
+  let browser = null;
   let page = null;
+  
   try {
     console.log(`🔄 Starting: ${target.name}`);
     
-    const browser = await getBrowser();
-    
-    // Additional safety check
-    if (!browser || !browser.connected) {
-      throw new Error('Browser not available or disconnected');
-    }
+    // Create NEW browser instance for each scraper (simplest solution)
+    browser = await puppeteer.launch({
+      executablePath: process.env.CHROMIUM_PATH,
+      headless: "new",
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote',
+        '--no-first-run'
+      ],
+      timeout: 30000
+    });
 
     page = await browser.newPage();
     
-    // Set realistic timeouts
-    page.setDefaultNavigationTimeout(30000);
-    page.setDefaultTimeout(15000);
-    
+    // Basic configuration
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
     await page.setViewport({ width: 1280, height: 800 });
-    
+    page.setDefaultNavigationTimeout(30000);
+    page.setDefaultTimeout(15000);
+
     console.log(`🌐 Navigating to: ${target.url}`);
     await page.goto(target.url, { 
       waitUntil: 'domcontentloaded',
       timeout: 30000
     });
 
-    await page.waitForTimeout(2000);
+    // Wait for page to load
+    await page.waitForTimeout(3000);
 
     const scrapedData = await page.evaluate((target) => {
       try {
@@ -123,12 +72,18 @@ export async function runGenericScraper(target) {
 
       if (error) throw new Error(`Database error: ${error.message}`);
 
-      // Try AI summary, but don't let it break the scraper
+      // AI Summarization
       try {
         await runAISummarizer(target.name);
       } catch (aiError) {
-        console.error(`AI summary failed for ${target.name}:`, aiError.message);
-        // Continue without AI - not critical
+        console.error(`AI summary failed: ${aiError.message}`);
+        // Fallback notification
+        await sendTelegramAlert(
+          `✅ ${target.name} Update\n` +
+          `📋 ${scrapedData.length} items collected\n` +
+          `🕒 ${new Date().toLocaleString()}\n` +
+          `#${target.name.replace(/\s+/g, '')} #Update`
+        );
       }
     }
 
@@ -138,40 +93,28 @@ export async function runGenericScraper(target) {
   } catch (error) {
     console.error(`❌ ${target.name} error:`, error.message);
     
-    // Close browser on error to clean up
-    await closeBrowser();
-    browserRestartCount++;
-    
-    if (browserRestartCount >= MAX_BROWSER_RESTARTS) {
-      console.error('❌ Too many browser restarts, stopping...');
-      process.exit(1);
-    }
-    
     await sendTelegramAlert(
       `❌ ${target.name} Failed\nError: ${error.message}\nTime: ${new Date().toLocaleString()}`
     );
     
     throw error;
+    
   } finally {
-    if (page && !page.isClosed()) {
+    // Cleanup - close everything
+    if (page) {
       try {
         await page.close();
       } catch (pageError) {
         console.error('Error closing page:', pageError.message);
       }
     }
+    
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (browserError) {
+        console.error('Error closing browser:', browserError.message);
+      }
+    }
   }
 }
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('Shutting down gracefully...');
-  await closeBrowser();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM, shutting down...');
-  await closeBrowser();
-  process.exit(0);
-});
