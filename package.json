@@ -4,9 +4,10 @@
   "main": "src/bootstrap.js",
   "type": "module",
   "scripts": {
-    "start": "node src/debug-absolute.js",
+    "start": "NODE_ENV=production node src/bootstrap.js",
     "scrape": "node src/scrapers/fatf.js",
-    "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\""
+    "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\"",
+    "build": "npm install --omit=dev"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.8",
