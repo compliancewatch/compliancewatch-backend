@@ -9,35 +9,49 @@ export async function runGenericScraper(target) {
   try {
     console.log(`🔄 Starting: ${target.name}`);
     
-    // Use Alpine's built-in Chromium
+    // Enhanced browser configuration for Docker
     browser = await puppeteer.launch({
       executablePath: '/usr/bin/chromium-browser',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--single-process'
+        '--disable-gpu',
+        '--single-process',
+        '--no-zygote',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-software-rasterizer'
       ],
       headless: "new",
-      timeout: 30000
+      ignoreHTTPSErrors: true,
+      timeout: 60000
     });
 
     page = await browser.newPage();
     
-    // Basic configuration
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-    await page.setViewport({ width: 1280, height: 800 });
-    page.setDefaultNavigationTimeout(30000);
-    page.setDefaultTimeout(15000);
+    // Enhanced page configuration
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1920, height: 1080 });
+    page.setDefaultNavigationTimeout(60000);
+    page.setDefaultTimeout(30000);
+
+    // Block unnecessary resources
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
 
     console.log(`🌐 Navigating to: ${target.url}`);
     await page.goto(target.url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 30000
+      waitUntil: 'networkidle2',
+      timeout: 60000
     });
 
-    // Wait for page to load
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
 
     const scrapedData = await page.evaluate((target) => {
       try {
@@ -69,7 +83,6 @@ export async function runGenericScraper(target) {
 
       if (error) throw new Error(`Database error: ${error.message}`);
 
-      // Success notification
       await sendTelegramAlert(
         `✅ ${target.name} Update\n` +
         `📋 ${scrapedData.length} items collected\n` +
@@ -91,21 +104,7 @@ export async function runGenericScraper(target) {
     throw error;
     
   } finally {
-    // Cleanup
-    if (page) {
-      try {
-        await page.close();
-      } catch (pageError) {
-        console.error('Error closing page:', pageError.message);
-      }
-    }
-    
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (browserError) {
-        console.error('Error closing browser:', browserError.message);
-      }
-    }
+    if (page) await page.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
   }
 }
