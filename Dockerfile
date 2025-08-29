@@ -13,11 +13,17 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
 
 WORKDIR /app
 
-# CACHE BUSTING - Add this line
+# Cache busting
 RUN echo "Build timestamp: $(date)" > /tmp/build.txt
 
 COPY package.json ./
 RUN npm install --omit=dev
+
 COPY . .
+
+# Verify file copy
+RUN echo "Verifying file copy..." && \
+    ls -la src/ && \
+    echo "File check completed"
 
 CMD ["npm", "start"]
