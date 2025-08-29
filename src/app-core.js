@@ -1,4 +1,4 @@
-// src/app-core.js - CORE APPLICATION LOGIC
+// src/app-core.js - COMPLETE CORE APPLICATION LOGIC
 export async function initializeApplication({ logger, sendTelegramAlert, nodeCron, scrapers, targets }) {
   const { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } = targets;
   const activeScrapers = new Set();
@@ -43,13 +43,25 @@ export async function initializeApplication({ logger, sendTelegramAlert, nodeCro
 
   async function runScrapersByType(targets, typeName) {
     logger.info(`🔄 Starting ${typeName} scrapers...`);
-    let successCount = 0, failCount = 0, skipCount = 0;
+    let successCount = 0;
+    let failCount = 0;
+    let skipCount = 0;
 
     for (const target of targets) {
       try {
         const result = await runScraperWithRetry(target);
-        result.success ? successCount++ : result.skipped ? skipCount++ : failCount++;
+        
+        if (result.success) {
+          successCount++;
+        } else if (result.skipped) {
+          skipCount++;
+        } else {
+          failCount++;
+        }
+        
+        // Delay between scrapers (8 seconds)
         await new Promise(resolve => setTimeout(resolve, 8000));
+        
       } catch (error) {
         logger.error(`Unexpected error with ${target.name}:`, error);
         failCount++;
@@ -64,7 +76,9 @@ export async function initializeApplication({ logger, sendTelegramAlert, nodeCro
   async function runAllScrapers() {
     try {
       logger.info('🔄 Starting FULL scraping cycle...');
+      logger.info(`📊 Targets: ${REGULATORY_TARGETS.length} Regulatory, ${BUSINESS_TARGETS.length} Business, ${CRYPTO_TARGETS.length} Crypto`);
       
+      // Run scrapers sequentially with delays between types
       const regulatoryResults = await runScrapersByType(REGULATORY_TARGETS, 'Regulatory');
       await new Promise(resolve => setTimeout(resolve, 10000));
       
@@ -79,29 +93,80 @@ export async function initializeApplication({ logger, sendTelegramAlert, nodeCro
 
       logger.info(`🎉 FULL cycle completed: ${totalSuccess} ✓, ${totalFail} ✗, ${totalSkip} ⏩`);
       
-      await sendTelegramAlert(
-        `📊 ComplianceWatch Scan Complete\n` +
-        `🌍 Regulatory: ${regulatoryResults.successCount}/${REGULATORY_TARGETS.length} ✓\n` +
-        `💼 Business: ${businessResults.successCount}/${BUSINESS_TARGETS.length} ✓\n` +
-        `₿ Crypto: ${cryptoResults.successCount}/${CRYPTO_TARGETS.length} ✓\n` +
-        `⏩ Skipped: ${totalSkip} | ❌ Failed: ${totalFail}\n` +
-        `🕒 ${new Date().toLocaleString()}\nNext scan in 3 hours ⏰`
-      );
+      // Send comprehensive summary to Telegram
+      try {
+        await sendTelegramAlert(
+          `📊 ComplianceWatch Scan Complete\n` +
+          `🌍 Regulatory: ${regulatoryResults.successCount}/${REGULATORY_TARGETS.length} ✓\n` +
+          `💼 Business: ${businessResults.successCount}/${BUSINESS_TARGETS.length} ✓\n` +
+          `₿ Crypto: ${cryptoResults.successCount}/${CRYPTO_TARGETS.length} ✓\n` +
+          `⏩ Skipped: ${totalSkip} | ❌ Failed: ${totalFail}\n` +
+          `🕒 ${new Date().toLocaleString()}\n` +
+          `Next scan in 3 hours ⏰`
+        );
+      } catch (error) {
+        logger.error('Failed to send Telegram summary:', error);
+      }
       
       return { totalSuccess, totalFail, totalSkip };
       
     } catch (error) {
       logger.error('runAllScrapers failed:', error);
-      await sendTelegramAlert(`🚨 SYSTEM CRITICAL FAILURE\nError: ${error.message}\nTime: ${new Date().toLocaleString()}`);
+      
+      // Critical failure notification
+      try {
+        await sendTelegramAlert(
+          `🚨 SYSTEM CRITICAL FAILURE\n` +
+          `Full scraping cycle failed\n` +
+          `Error: ${error.message}\n` +
+          `Time: ${new Date().toLocaleString()}\n` +
+          `#Critical #Error`
+        );
+      } catch (telegramError) {
+        logger.error('Also failed to send critical alert:', telegramError);
+      }
+      
       return { totalSuccess: 0, totalFail: 1, totalSkip: 0 };
     }
   }
 
   // Schedule scraping every 3 hours
-  nodeCron.schedule('0 */3 * * *', runAllScrapers);
-
-  // Initial scrape after 30 seconds
-  setTimeout(runAllScrapers, 30000);
-
+  nodeCron.schedule('0 */3 * * *', async () => {
+    logger.info('⏰ 3-hour scraping cycle triggered');
+    try {
+      await runAllScrapers();
+    } catch (error) {
+      logger.error('Scheduled scraping failed:', error);
+    }
+  });
+  
+  // Initial scrape after 45 seconds (let system stabilize)
+  setTimeout(async () => {
+    logger.info('🔄 Initial full scrape starting...');
+    try {
+      const results = await runAllScrapers();
+      logger.info(`✅ Initial scrape completed: ${results.totalSuccess} successes`);
+    } catch (error) {
+      logger.error('Initial scrape failed:', error);
+    }
+  }, 45000);
+  
   logger.info('✅ Application core initialized successfully');
+  logger.info('📅 Automated scraping: Every 3 hours');
+  logger.info('💬 Telegram Alerts: Professional format with hashtags');
+  
+  // Startup notification
+  try {
+    await sendTelegramAlert(
+      `🚀 ComplianceWatch AI System Online\n` +
+      `✅ All services operational\n` +
+      `📊 ${REGULATORY_TARGETS.length + BUSINESS_TARGETS.length + CRYPTO_TARGETS.length} sources configured\n` +
+      `⏰ Updates every 3 hours\n` +
+      `🤖 AI-powered summaries enabled\n` +
+      `🕒 ${new Date().toLocaleString()}\n` +
+      `#SystemOnline #ComplianceAI`
+    );
+  } catch (error) {
+    logger.warn('Failed to send startup notification:', error);
+  }
 }
