@@ -12,6 +12,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
     NODE_ENV=production
 
 WORKDIR /app
+RUN echo "Cache bust: $(date)" > /tmp/cache_bust.txt
 COPY package.json ./
 RUN npm install --omit=dev --no-cache
 COPY . .
