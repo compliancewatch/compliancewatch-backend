@@ -1,10 +1,10 @@
 {
   "name": "compliancewatch-backend",
   "version": "1.0.0",
-  "main": "src/railway-start.js",
+  "main": "src/railway-start-new.js",
   "type": "module",
   "scripts": {
-    "start": "node src/minimal-start.js",
+    "start": "NODE_ENV=production node src/railway-start-new.js",
     "scrape": "node src/scrapers/fatf.js",
     "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\""
   },
