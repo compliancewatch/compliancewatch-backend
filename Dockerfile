@@ -21,9 +21,10 @@ RUN npm install --omit=dev
 
 COPY . .
 
-# Verify file copy
-RUN echo "Verifying file copy..." && \
-    ls -la src/ && \
-    echo "File check completed"
+# Verify the new file is copied correctly
+RUN echo "Verifying file integrity..." && \
+    ls -la src/railway-start-new.js && \
+    head -n 5 src/railway-start-new.js && \
+    echo "✅ File verification completed"
 
 CMD ["npm", "start"]
