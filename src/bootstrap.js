@@ -1,13 +1,13 @@
-// src/bootstrap.js - COMPLETE NEW STARTUP FILE
+// src/bootstrap.js - FIXED WITH ABSOLUTE PATH
 console.log('🚀 ComplianceWatch Bootstrap Starting...');
 
 async function initializeApp() {
   try {
     console.log('📦 Loading dependencies...');
     
-    // 1. First load config with dynamic import
+    // 1. First load config with ABSOLUTE PATH
     console.log('🔧 Loading configuration...');
-    const { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } = await import('../../config/targets.js');
+    const { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } = await import('/app/config/targets.js');
     console.log('✅ Config loaded:', {
       regulatory: REGULATORY_TARGETS.length,
       business: BUSINESS_TARGETS.length,
