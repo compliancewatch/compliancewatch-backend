@@ -265,6 +265,7 @@ async function initializeApplication() {
         `✅ All services operational\n` +
         `📊 ${REGULATORY_TARGETS.length + BUSINESS_TARGETS.length + CRYPTO_TARGETS.length} sources configured\n` +
         `⏰ Updates every 3 hours\n` +
+        `🤖 AI-powered summaries enabled\n` +
         `🕒 ${new Date().toLocaleString()}\n` +
         `#SystemOnline #ComplianceAI`
       );
