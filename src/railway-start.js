@@ -32,7 +32,6 @@ import { runScraper as runFATFScraper } from './scrapers/fatf.js';
 
 // Map ALL targets to scraper functions
 const scraperMap = {
-  // Regulatory (13)
   'un-security-council': runUNSecurityCouncilScraper,
   'unctad': runUNCTADScraper,
   'sec': runSECScraper,
@@ -46,20 +45,14 @@ const scraperMap = {
   'cvm-brazil': runCVMBrazilScraper,
   'mas-singapore': runMASSingaporeScraper,
   'cbrc-china': runCBRCChinaScraper,
-  
-  // Business (4)
   'bloomberg': runBloombergScraper,
   'reuters': runReutersScraper,
   'financial-times': runFinancialTimesScraper,
   'yahoo-finance': runYahooFinanceScraper,
-  
-  // Crypto (4)
   'coindesk': runCoinDeskScraper,
   'cointelegraph': runCoinTelegraphScraper,
   'cryptoslate': runCryptoSlateScraper,
   'the-block': runTheBlockScraper,
-  
-  // Special (1)
   'fatf': runFATFScraper
 };
 
