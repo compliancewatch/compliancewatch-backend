@@ -13,7 +13,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
 
 WORKDIR /app
 COPY package.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --no-cache
 COPY . .
 
 CMD ["npm", "start"]
