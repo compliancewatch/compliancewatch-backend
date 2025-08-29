@@ -3,7 +3,7 @@ import { testConnection } from './services/database.js';
 import { startBot } from './services/telegram-bot.js';
 import nodeCron from 'node-cron';
 
-// Import targets
+// Import targets - CORRECTED PATH
 import { REGULATORY_TARGETS, BUSINESS_TARGETS, CRYPTO_TARGETS } from '../../config/targets.js';
 
 // Import ALL scraper functions
