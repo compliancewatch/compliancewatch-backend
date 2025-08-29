@@ -1,4 +1,3 @@
-// Export all scraper functions
 export { runUNSecurityCouncilScraper } from './un-security-council.js';
 export { runUNCTADScraper } from './unctad.js';
 export { runSECScraper } from './sec.js';
