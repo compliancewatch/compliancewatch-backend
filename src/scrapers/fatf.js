@@ -1,23 +1,14 @@
-// src/scrapers/fatf.js - UPDATED BROWSER LAUNCH FOR ALPINE
+// src/scrapers/fatf.js - SIMPLIFIED VERSION
 import puppeteer from 'puppeteer';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
 
-// FATF-specific configuration matching your target structure
 export const FATF_CONFIG = {
   name: "FATF High-Risk Jurisdictions",
   url: "https://www.fatf-gafi.org/en/high-risk/",
-  titleSelector: ".high-risk-list li, .list-item, li, [class*='country'], [class*='jurisdiction']",
-  dateSelector: ".content .date, time[datetime], .publication-date",
+  titleSelector: ".high-risk-list li, .list-item, li",
   type: "regulatory",
-  scraper: "fatf",
-  waitForSelector: ".high-risk-list, .content, main",
-  timezone: "UTC",
-  verification: { 
-    minLength: 5, 
-    maxLength: 50, 
-    exclude: [] 
-  }
+  scraper: "fatf"
 };
 
 export async function runScraper() {
@@ -27,9 +18,9 @@ export async function runScraper() {
   try {
     console.log('🔄 Starting FATF-specific scraper...');
     
-    // UPDATED BROWSER LAUNCH FOR ALPINE LINUX
+    // SIMPLIFIED browser launch
     browser = await puppeteer.launch({
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -37,36 +28,21 @@ export async function runScraper() {
         '--disable-gpu'
       ],
       headless: "new",
-      ignoreHTTPSErrors: true,
-      timeout: 60000
+      timeout: 30000
     });
 
     page = await browser.newPage();
     
-    // Set realistic user agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1920, height: 1080 });
     
     console.log('🌐 Navigating to FATF website...');
     await page.goto(FATF_CONFIG.url, { 
-      waitUntil: 'networkidle2',
-      timeout: 60000
+      waitUntil: 'domcontentloaded',
+      timeout: 30000
     });
 
-    // Wait for content to load
-    await page.waitForTimeout(5000);
-    
-    // Wait for specific content if specified
-    if (FATF_CONFIG.waitForSelector) {
-      try {
-        await page.waitForSelector(FATF_CONFIG.waitForSelector, { 
-          timeout: 15000,
-          visible: true 
-        });
-      } catch (e) {
-        console.warn(`Wait selector ${FATF_CONFIG.waitForSelector} not found`);
-      }
-    }
+    await page.waitForTimeout(3000);
 
     // FATF-specific extraction
     const fatfData = await page.evaluate((config) => {
@@ -80,37 +56,17 @@ export async function runScraper() {
           for (const element of elements) {
             const text = element.textContent.trim();
             
-            // FATF-specific filtering
-            if (text && text.length >= config.verification.minLength && 
-                text.length <= config.verification.maxLength) {
-              
-              // Extract date if available
-              let dateText = '';
-              if (config.dateSelector) {
-                const dateSelectors = Array.isArray(config.dateSelector) ? 
-                  config.dateSelector : [config.dateSelector];
-                
-                for (const dateSelector of dateSelectors) {
-                  const dateElement = document.querySelector(dateSelector);
-                  if (dateElement) {
-                    dateText = dateElement.getAttribute('datetime') || 
-                              dateElement.textContent.trim();
-                    break;
-                  }
-                }
-              }
-              
+            if (text && text.length > 5) {
               results.push({
                 title: text,
                 url: element.href || window.location.href,
-                date: dateText || new Date().toISOString(),
                 source: config.name,
                 type: config.type
               });
             }
           }
         } catch (e) {
-          console.warn(`Selector ${selector} failed:`, e);
+          continue;
         }
       }
       
@@ -119,23 +75,15 @@ export async function runScraper() {
 
     console.log(`📊 Found ${fatfData.length} FATF entries`);
 
-    // FATF-specific post-processing
+    // Process results
     const processedData = fatfData
       .map(item => ({
         country: extractCountryName(item.title),
         status: extractJurisdictionStatus(item.title),
         source_url: item.url,
-        listed_date: item.date,
-        scraped_at: new Date().toISOString(),
-        metadata: {
-          original_title: item.title,
-          source: item.source
-        }
+        scraped_at: new Date().toISOString()
       }))
-      .filter(item => isValidJurisdiction(item.country))
-      .filter((item, index, array) => 
-        array.findIndex(i => i.country === item.country) === index
-      );
+      .filter(item => isValidJurisdiction(item.country));
 
     console.log(`✅ Processed ${processedData.length} unique jurisdictions`);
 
@@ -157,22 +105,10 @@ export async function runScraper() {
         `🌍 FATF Update\n` +
         `📋 ${processedData.length} jurisdictions listed\n` +
         `🕒 ${new Date().toLocaleString()}\n` +
-        `#FATF #Compliance #HighRisk`
+        `#FATF #Compliance`
       );
     } else {
       console.log('⚠️ No valid FATF jurisdictions found');
-      
-      await supabase
-        .from('scraped_data')
-        .insert({
-          source: FATF_CONFIG.name,
-          data: [],
-          created_at: new Date().toISOString(),
-          item_count: 0,
-          status: 'no_data',
-          type: FATF_CONFIG.type,
-          notes: 'Scraper ran but found no valid jurisdictions'
-        });
     }
 
     console.log('✅ FATF scraping completed');
@@ -181,17 +117,6 @@ export async function runScraper() {
   } catch (error) {
     console.error('❌ FATF scraper error:', error.message);
     
-    await supabase
-      .from('scraped_data')
-      .insert({
-        source: FATF_CONFIG.name,
-        data: [],
-        created_at: new Date().toISOString(),
-        status: 'error',
-        type: FATF_CONFIG.type,
-        error_message: error.message
-      });
-
     await sendTelegramAlert(`❌ FATF Failed: ${error.message}`);
     throw error;
   } finally {
@@ -200,52 +125,27 @@ export async function runScraper() {
   }
 }
 
-// Helper functions for FATF-specific processing
+// Helper functions (keep these the same)
 function extractCountryName(title) {
   if (!title) return 'Unknown';
-  
-  let cleaned = title
-    .replace(/^(\d+\.\s*)/, '')
-    .replace(/\s*\(.*?\)\s*/g, '')
-    .replace(/\s*\-.*?$/, '')
-    .replace(/^[^a-zA-Z]*/, '')
-    .trim();
-  
+  let cleaned = title.replace(/^(\d+\.\s*)/, '').trim();
   const words = cleaned.split(/\s+/);
   return words.length <= 5 ? cleaned : words.slice(0, 3).join(' ');
 }
 
 function extractJurisdictionStatus(title) {
   const lowerTitle = title.toLowerCase();
-  
-  if (lowerTitle.includes('high risk') || lowerTitle.includes('blacklist')) {
-    return 'High Risk';
-  }
-  if (lowerTitle.includes('grey list') || lowerTitle.includes('increased monitoring')) {
-    return 'Increased Monitoring';
-  }
-  if (lowerTitle.includes('removed') || lowerTitle.includes('delisted')) {
-    return 'Removed';
-  }
-  
+  if (lowerTitle.includes('high risk') || lowerTitle.includes('blacklist')) return 'High Risk';
+  if (lowerTitle.includes('grey list') || lowerTitle.includes('increased monitoring')) return 'Increased Monitoring';
+  if (lowerTitle.includes('removed') || lowerTitle.includes('delisted')) return 'Removed';
   return 'Listed';
 }
 
 function isValidJurisdiction(name) {
   if (!name || name.length < 3 || name.length > 50) return false;
-  
   const lowerName = name.toLowerCase();
-  const excludedTerms = [
-    'country', 'jurisdiction', 'list', 'table', 'content', 
-    'menu', 'navigation', 'footer', 'header', 'click', 'read more',
-    'high-risk', 'monitoring', 'fatf', 'gafi'
-  ];
-  
-  if (excludedTerms.some(term => lowerName.includes(term))) {
-    return false;
-  }
-  
-  return /[A-Z]/.test(name);
+  const excludedTerms = ['country', 'jurisdiction', 'list', 'table', 'menu', 'navigation'];
+  return !excludedTerms.some(term => lowerName.includes(term)) && /[A-Z]/.test(name);
 }
 
 export default runScraper;
