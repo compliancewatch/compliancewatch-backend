@@ -1,5 +1,5 @@
-// src/scrapers/fatf.js - UPDATED TO MATCH YOUR ARCHITECTURE
-import puppeteer from 'puppeteer-core';
+// src/scrapers/fatf.js - UPDATED BROWSER LAUNCH
+import puppeteer from 'puppeteer';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
 
@@ -27,15 +27,13 @@ export async function runScraper() {
   try {
     console.log('🔄 Starting FATF-specific scraper...');
     
+    // UPDATED BROWSER LAUNCH FOR RAILWAY
     browser = await puppeteer.launch({
-      executablePath: '/usr/bin/chromium-browser',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote'
+        '--disable-gpu'
       ],
       headless: "new",
       ignoreHTTPSErrors: true,
