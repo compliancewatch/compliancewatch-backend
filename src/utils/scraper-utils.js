@@ -1,4 +1,42 @@
 // src/utils/scraper-utils.js
+export const SCRAPER_CONFIG = {
+  defaultTimezone: "UTC",
+  dateFormat: "ISO8601",
+  maxTitleLength: 200,
+  minTitleLength: 15,
+  requestTimeout: 30000,
+  navigationTimeout: 45000,
+  retryAttempts: 2,
+  retryDelay: 5000,
+  
+  excludedPatterns: [
+    "^Home$", "^Menu$", "^Navigation$", "^Search$", "^Login$", "^Sign In$",
+    "^Subscribe$", "^Contact$", "^About$", "^Hakkımızda$", "^İletişim$",
+    "^Ana Sayfa$", "^Portfolio$", "^Markets$", "^MyFT$", "^Settings$",
+    "^Privacy$", "^Terms$", "^Careers$", "^Advertise$", "^Cookie$",
+    "^Newsletter$", "^Podcast$", "^Trending$", "^Watchlist$", "^Pro$",
+    "^Commission$", "^Division$", "^Office$", "^Consultation$", "^Guidance$",
+    "^Policy$", "^Notice$", "^Circular$", "^Announcement$", "^Report$",
+    "^Publication$", "^Study$", "^Speech$", "^Statement$", "^Remarks$",
+    "^Document$", "^Meeting$", "^Kurumsal$", "^Başkan$", "^Baskan$"
+  ],
+
+  userAgents: [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  ],
+
+  datePatterns: {
+    ISO: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+    DD_MMM_YYYY: /(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/,
+    MMM_DD_YYYY: /([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})/,
+    MM_DD_YYYY: /(\d{1,2})\/(\d{1,2})\/(\d{4})/,
+    YYYY_MM_DD: /(\d{4})-(\d{1,2})-(\d{1,2})/,
+    relative: /(\d+)\s+(minute|hour|day|week|month|year)s?\s+ago/i
+  }
+};
+
 export const DateUtils = {
   parseDate: (dateString, timezone = "UTC") => {
     if (!dateString) return new Date().toISOString();
