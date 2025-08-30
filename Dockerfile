@@ -1,35 +1,25 @@
-FROM node:20-alpine
+FROM node:20-slim
 
-# Install Chromium and dependencies for Alpine Linux
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    udev
+# Install minimal dependencies for Chromium
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set Puppeteer to use system Chromium
+# Set Puppeteer to use system Chrome
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome \
     NODE_ENV=production
 
 WORKDIR /app
-
-# Complete cache busting
-RUN echo "Fresh build: $(date +%s)" > /tmp/cache_bust.txt
 
 COPY package.json ./
 RUN npm install --omit=dev
 
 COPY . .
-
-# Verify the new bootstrap file
-RUN echo "✅ Build complete. Verifying files..." && \
-    ls -la src/ && \
-    echo "Bootstrap file content:" && \
-    head -n 10 src/bootstrap.js
 
 CMD ["npm", "start"]
