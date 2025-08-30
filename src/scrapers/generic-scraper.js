@@ -2,8 +2,8 @@
 import puppeteer from 'puppeteer-core';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
-import { SCRAPER_CONFIG } from '../config/targets.js';
 import { 
+  SCRAPER_CONFIG,
   DateUtils, 
   DeduplicationUtils, 
   ScrapingStrategies 
