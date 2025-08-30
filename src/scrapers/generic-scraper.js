@@ -1,4 +1,4 @@
-// src/scrapers/generic-scraper.js
+// src/scrapers/generic-scraper.js - ENHANCED WITH DEBUGGING
 import puppeteer from 'puppeteer';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
@@ -16,7 +16,7 @@ export async function runGenericScraper(target) {
   try {
     console.log(`🔄 Starting: ${target.name} (${target.type})`);
     
-    // SIMPLIFIED browser configuration for Railway
+    // Browser configuration
     browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
       args: [
@@ -35,24 +35,11 @@ export async function runGenericScraper(target) {
 
     page = await browser.newPage();
     
-    // Basic anti-bot evasion
-    await page.setJavaScriptEnabled(true);
-    
-    // Set realistic user agent
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    await page.setUserAgent(userAgent);
-    
-    // Set extra headers
+    // Basic anti-bot
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br'
-    });
-
-    // Basic stealth
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => false });
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
     });
 
     await page.setViewport({ width: 1920, height: 1080 });
@@ -64,37 +51,62 @@ export async function runGenericScraper(target) {
       timeout: 30000
     });
 
-    // Wait for content to load
+    // DEBUG: Log page content for selector troubleshooting
+    try {
+      const pageTitle = await page.title();
+      console.log(`🔍 Page title: ${pageTitle}`);
+      
+      // Check what selectors are available
+      const availableElements = await page.evaluate((selectors) => {
+        const results = {};
+        const selectorList = Array.isArray(selectors) ? selectors : [selectors];
+        
+        selectorList.forEach(selector => {
+          try {
+            const elements = document.querySelectorAll(selector);
+            results[selector] = elements.length;
+          } catch (e) {
+            results[selector] = 'invalid selector';
+          }
+        });
+        
+        return results;
+      }, target.titleSelector);
+      
+      console.log(`🔍 Selector analysis:`, JSON.stringify(availableElements, null, 2));
+      
+    } catch (debugError) {
+      console.warn('Debug analysis failed:', debugError.message);
+    }
+
     await page.waitForTimeout(3000);
 
-    // Wait for specific content if specified
-    if (target.waitForSelector) {
+    // Wait for selector if specified
+    if (target.waitForSelector && target.waitForSelector !== 'body') {
       try {
-        await page.waitForSelector(target.waitForSelector, { 
-          timeout: 10000
-        });
+        await page.waitForSelector(target.waitForSelector, { timeout: 10000 });
       } catch (e) {
         console.warn(`Wait selector ${target.waitForSelector} not found`);
       }
     }
 
-    // Content extraction
+    // Enhanced content extraction with better error handling
     const scrapedData = await page.evaluate(async (target, config) => {
       const results = [];
-      const maxItems = 15;
+      const maxItems = 20;
       
       try {
-        // Extract titles
+        // Extract titles with multiple strategies
         const titleSelectors = Array.isArray(target.titleSelector) ? 
           target.titleSelector : [target.titleSelector];
         
-        let titleElements = [];
+        let allTitleElements = [];
         for (const selector of titleSelectors) {
           try {
             const elements = Array.from(document.querySelectorAll(selector));
             if (elements.length > 0) {
-              titleElements = elements;
-              break;
+              allTitleElements = elements;
+              break; // Use the first selector that works
             }
           } catch (e) {
             continue;
@@ -102,7 +114,7 @@ export async function runGenericScraper(target) {
         }
 
         // Extract dates
-        let dateElements = [];
+        let allDateElements = [];
         if (target.dateSelector) {
           const dateSelectors = Array.isArray(target.dateSelector) ? 
             target.dateSelector : [target.dateSelector];
@@ -111,7 +123,7 @@ export async function runGenericScraper(target) {
             try {
               const elements = Array.from(document.querySelectorAll(selector));
               if (elements.length > 0) {
-                dateElements = elements;
+                allDateElements = elements;
                 break;
               }
             } catch (e) {
@@ -120,22 +132,34 @@ export async function runGenericScraper(target) {
           }
         }
 
+        console.log(`Found ${allTitleElements.length} title elements, ${allDateElements.length} date elements`);
+
         // Process items
-        for (let i = 0; i < Math.min(titleElements.length, maxItems); i++) {
+        for (let i = 0; i < Math.min(allTitleElements.length, maxItems); i++) {
           try {
-            const titleEl = titleElements[i];
+            const titleEl = allTitleElements[i];
             if (!titleEl) continue;
 
             const titleText = titleEl.textContent.trim();
             const url = titleEl.href || window.location.href;
 
             // Basic filtering
-            if (!titleText || titleText.length < 10) continue;
+            if (!titleText || titleText.length < config.minTitleLength) continue;
 
+            // Check against excluded patterns
+            const isExcluded = config.excludedPatterns.some(pattern => 
+              new RegExp(pattern, 'i').test(titleText)
+            );
+            if (isExcluded) continue;
+
+            // Extract date
             let dateText = '';
-            if (dateElements[i]) {
-              dateText = dateElements[i].getAttribute('datetime') || 
-                         dateElements[i].textContent.trim();
+            if (allDateElements[i]) {
+              dateText = allDateElements[i].getAttribute('datetime') || 
+                         allDateElements[i].textContent.trim();
+            } else if (allDateElements[0]) {
+              dateText = allDateElements[0].getAttribute('datetime') || 
+                         allDateElements[0].textContent.trim();
             }
 
             results.push({
@@ -143,10 +167,12 @@ export async function runGenericScraper(target) {
               url: url.startsWith('http') ? url : new URL(url, window.location.href).href,
               date: dateText,
               source: target.name,
-              type: target.type
+              type: target.type,
+              elementIndex: i
             });
 
           } catch (itemError) {
+            console.warn('Error processing item:', itemError);
             continue;
           }
         }
@@ -160,13 +186,14 @@ export async function runGenericScraper(target) {
 
     console.log(`📊 ${target.name}: Found ${scrapedData.length} raw items`);
 
-    // Data processing
+    // Process and enhance data
     const processedData = [];
     
     for (const item of scrapedData) {
       try {
         const normalizedDate = DateUtils.parseDate(item.date, target.timezone);
         
+        // Apply verification
         const shouldInclude = (title) => {
           const { minLength, maxLength } = target.verification || 
             { minLength: SCRAPER_CONFIG.minTitleLength, maxLength: SCRAPER_CONFIG.maxTitleLength };
@@ -186,7 +213,9 @@ export async function runGenericScraper(target) {
             date: normalizedDate,
             source: item.source,
             type: item.type,
-            scraped_at: new Date().toISOString()
+            scraped_at: new Date().toISOString(),
+            // Add content for summarization
+            content_snippet: item.title // Will be used for AI summary
           });
         }
       } catch (error) {
@@ -194,7 +223,7 @@ export async function runGenericScraper(target) {
       }
     }
 
-    // Deduplication
+    // Apply deduplication
     const deduplicationConfig = target.deduplication || { strategy: "title", threshold: 0.8 };
     const uniqueItems = DeduplicationUtils.deduplicate(
       processedData, 
@@ -204,7 +233,7 @@ export async function runGenericScraper(target) {
 
     console.log(`✅ ${target.name}: ${uniqueItems.length} unique items after processing`);
 
-    // Database storage
+    // Save to database
     if (uniqueItems.length > 0) {
       const { error } = await supabase
         .from('scraped_data')
@@ -219,12 +248,8 @@ export async function runGenericScraper(target) {
 
       if (error) throw new Error(`Database error: ${error.message}`);
 
-      await sendTelegramAlert(
-        `✅ ${target.name} Update\n` +
-        `📋 ${uniqueItems.length} items collected\n` +
-        `🕒 ${new Date().toLocaleString()}\n` +
-        `#${target.name.replace(/\s+/g, '')} #${target.type}`
-      );
+      // Send enhanced Telegram alert with AI summary
+      await sendEnhancedTelegramAlert(target, uniqueItems);
 
     } else {
       console.log(`⚠️ ${target.name}: No valid data found`);
@@ -270,6 +295,51 @@ export async function runGenericScraper(target) {
     if (page) await page.close().catch(() => {});
     if (browser) await browser.close().catch(() => {});
   }
+}
+
+// Enhanced Telegram alert with AI summaries
+async function sendEnhancedTelegramAlert(target, items) {
+  try {
+    const topItems = items.slice(0, 3);
+    let message = `✅ ${target.name} Update\n`;
+    message += `📋 ${items.length} items collected\n`;
+    message += `🕒 ${new Date().toLocaleString()}\n\n`;
+    
+    for (const [index, item] of topItems.entries()) {
+      // Generate AI summary (you'll implement this)
+      const summary = await generateAISummary(item.title, item.source);
+      
+      message += `📰 ${index + 1}. ${item.title}\n`;
+      message += `🔗 ${item.url}\n`;
+      message += `📅 ${new Date(item.date).toLocaleDateString()}\n`;
+      message += `🤖 ${summary}\n\n`;
+    }
+    
+    message += `#${target.name.replace(/\s+/g, '')} #${target.type} #AIUpdate`;
+    
+    await sendTelegramAlert(message);
+  } catch (error) {
+    // Fallback to simple alert
+    console.warn('Enhanced alert failed, sending simple alert:', error);
+    const topTitles = items.slice(0, 3).map(item => 
+      `• ${item.title.substring(0, 60)}${item.title.length > 60 ? '...' : ''}`
+    ).join('\n');
+    
+    await sendTelegramAlert(
+      `✅ ${target.name} Update\n` +
+      `📋 ${items.length} items collected\n` +
+      `🕒 ${new Date().toLocaleString()}\n` +
+      `📝 Top items:\n${topTitles}\n` +
+      `#${target.name.replace(/\s+/g, '')} #${target.type}`
+    );
+  }
+}
+
+// AI Summary generator (to be implemented)
+async function generateAISummary(title, source) {
+  // This is a placeholder - you'll implement actual AI integration
+  // For now, return a simple summary
+  return `Summary: ${title} from ${source} requires regulatory attention.`;
 }
 
 export function createScraper(targetConfig) {
