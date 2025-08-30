@@ -8,11 +8,13 @@
     "scrape": "node src/scrapers/fatf.js",
     "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\"",
     "test": "node test-targets.js",
-    "dev": "NODE_ENV=development node src/bootstrap.js"
+    "dev": "NODE_ENV=development node src/bootstrap.js",
+    "debug": "NODE_ENV=development node --inspect src/bootstrap.js",
+    "postinstall": "node scripts/install-chromium.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.8",
-    "puppeteer-core": "^21.11.0",
+    "puppeteer": "^21.11.0",
     "node-cron": "^3.0.2",
     "telegraf": "^4.12.2",
     "dotenv": "^16.4.5",
