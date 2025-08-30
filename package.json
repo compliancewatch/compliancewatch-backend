@@ -8,8 +8,7 @@
     "scrape": "node src/scrapers/fatf.js",
     "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\"",
     "test": "node test-targets.js",
-    "dev": "NODE_ENV=development node src/bootstrap.js",
-    "debug": "NODE_ENV=development node --inspect src/bootstrap.js"
+    "dev": "NODE_ENV=development node src/bootstrap.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.8",
@@ -20,12 +19,7 @@
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
     "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "puppeteer-extra-plugin-user-preferences": "^2.4.2",
-    "puppeteer-extra-plugin-user-data-dir": "^2.4.2"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "engines": {
     "node": ">=20.0.0",
