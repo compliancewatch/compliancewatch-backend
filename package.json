@@ -4,7 +4,7 @@
   "main": "src/bootstrap.js",
   "type": "module",
   "scripts": {
-    "start": "NODE_ENV=production node src/bootstrap.js",
+    "start": "node test-simple-telegram.js",
     "scrape": "node src/scrapers/fatf.js",
     "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\""
   },
