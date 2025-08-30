@@ -1,45 +1,86 @@
-// config/targets.js
+// config/targets.js - UPDATED SELECTORS
 export const REGULATORY_TARGETS = [
   {
     name: "UN Security Council",
     url: "https://www.un.org/securitycouncil/content/press-releases",
-    titleSelector: ".document-title a",
-    dateSelector: ".date",
-    scraper: "un-security-council",
+    titleSelector: "h2, h3, h4, a, .title, .headline, [class*='title']",
+    dateSelector: "time, .date, .timestamp, [datetime]",
     type: "regulatory",
-    schedule: "0 */3 * * *" // Every 3 hours
+    scraper: "un-security-council",
+    waitForSelector: ".content, article, main" // Wait for content area
   },
-  // ... ALL YOUR REGULATORY TARGETS ...
+  {
+    name: "SEC Filings",
+    url: "https://www.sec.gov/news/pressreleases",
+    titleSelector: "h1, h2, h3, h4, a, .title, .news-title",
+    dateSelector: "time, .date, .datetime",
+    type: "regulatory", 
+    scraper: "sec",
+    waitForSelector: "#content"
+  },
+  {
+    name: "EU Commission",
+    url: "https://ec.europa.eu/commission/presscorner/home/en",
+    titleSelector: "h1, h2, h3, h4, a, .title, .ecl-link",
+    dateSelector: "time, .date, .ecl-date-block",
+    type: "regulatory",
+    scraper: "eu-commission"
+  }
 ];
 
 export const BUSINESS_TARGETS = [
   {
     name: "Bloomberg Markets",
     url: "https://www.bloomberg.com/markets",
-    titleSelector: "div.story-item h3",
-    dateSelector: "div.story-item time",
-    scraper: "bloomberg",
+    titleSelector: "h1, h2, h3, h4, [data-component*='headline'], .headline",
+    dateSelector: "time, [datetime], .timestamp",
     type: "business",
-    schedule: "0 */3 * * *" // Every 3 hours
+    scraper: "bloomberg",
+    stealth: true, // Extra stealth needed
+    waitTimeout: 10000 // Longer wait
   },
-  // ... ALL YOUR BUSINESS TARGETS ...
+  {
+    name: "Reuters Business",
+    url: "https://www.reuters.com/business/",
+    titleSelector: "h1, h2, h3, h4, a, [data-testid*='Heading'], .text__text",
+    dateSelector: "time, [datetime], .date",
+    type: "business",
+    scraper: "reuters"
+  },
+  {
+    name: "Financial Times",
+    url:https://www.ft.com/",
+    titleSelector: "h1, h2, h3, h4, a, .js-teaser-heading-link",
+    dateSelector: "time, [datetime], .o-date",
+    type: "business",
+    scraper: "financial-times",
+    stealth: true
+  }
 ];
 
 export const CRYPTO_TARGETS = [
   {
     name: "CoinDesk",
-    url: "https://www.coindesk.com/livewire",
-    titleSelector: ".livewire-story h5",
-    dateSelector: ".livewire-story time",
-    scraper: "coindesk",
+    url: "https://www.coindesk.com/",
+    titleSelector: "h1, h2, h3, h4, a, [data-testid*='headline'], .heading",
+    dateSelector: "time, [datetime], .timestamp",
     type: "crypto",
-    schedule: "0 */3 * * *" // Every 3 hours
+    scraper: "coindesk"
   },
-  // ... ALL YOUR CRYPTO TARGETS ...
-];
-
-export const ALL_TARGETS = [
-  ...REGULATORY_TARGETS,
-  ...BUSINESS_TARGETS,
-  ...CRYPTO_TARGETS
+  {
+    name: "CoinTelegraph",
+    url: "https://cointelegraph.com/",
+    titleSelector: "h1, h2, h3, h4, a, .post__title, .heading",
+    dateSelector: "time, [datetime], .post__time",
+    type: "crypto",
+    scraper: "cointelegraph"
+  },
+  {
+    name: "CryptoSlate",
+    url: "https://cryptoslate.com/",
+    titleSelector: "h1, h2, h3, h4, a, .article-title, .title",
+    dateSelector: "time, [datetime], .date",
+    type: "crypto",
+    scraper: "cryptoslate"
+  }
 ];
