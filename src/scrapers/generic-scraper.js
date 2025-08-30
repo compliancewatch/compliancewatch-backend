@@ -1,12 +1,13 @@
+// src/scrapers/generic-scraper.js
 import puppeteer from 'puppeteer-core';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
+import { SCRAPER_CONFIG } from '../config/targets.js';
 import { 
-  SCRAPER_CONFIG, 
   DateUtils, 
   DeduplicationUtils, 
   ScrapingStrategies 
-} from '../config/targets.js';
+} from '../utils/scraper-utils.js';
 
 export async function runGenericScraper(target) {
   let browser = null;
