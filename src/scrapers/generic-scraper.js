@@ -1,5 +1,5 @@
 // src/scrapers/generic-scraper.js
-import puppeteer from 'puppeteer-core';
+import puppeteer from 'puppeteer';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
 import { 
@@ -16,9 +16,8 @@ export async function runGenericScraper(target) {
   try {
     console.log(`🔄 Starting: ${target.name} (${target.type})`);
     
-    // Enhanced browser configuration
+    // Enhanced browser configuration - UPDATED FOR RAILWAY
     browser = await puppeteer.launch({
-      executablePath: '/usr/bin/chromium-browser',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
