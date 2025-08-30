@@ -1,4 +1,4 @@
-// src/scrapers/fatf.js - SIMPLIFIED VERSION
+// src/scrapers/fatf.js - UPDATED WITH BETTER SELECTORS
 import puppeteer from 'puppeteer';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
@@ -6,9 +6,11 @@ import { sendTelegramAlert } from '../services/telegram-bot.js';
 export const FATF_CONFIG = {
   name: "FATF High-Risk Jurisdictions",
   url: "https://www.fatf-gafi.org/en/high-risk/",
-  titleSelector: ".high-risk-list li, .list-item, li",
+  titleSelector: ".high-risk-list li, .list-item, li, .country-item, .jurisdiction",
+  dateSelector: ".date, time, [datetime], .published-date",
   type: "regulatory",
-  scraper: "fatf"
+  scraper: "fatf",
+  waitForSelector: "body"
 };
 
 export async function runScraper() {
@@ -18,7 +20,6 @@ export async function runScraper() {
   try {
     console.log('🔄 Starting FATF-specific scraper...');
     
-    // SIMPLIFIED browser launch
     browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
       args: [
@@ -44,28 +45,50 @@ export async function runScraper() {
 
     await page.waitForTimeout(3000);
 
-    // FATF-specific extraction
+    // DEBUG: Check what's on the page
+    const pageContent = await page.evaluate(() => {
+      return {
+        title: document.title,
+        h1: document.querySelector('h1')?.textContent,
+        h2: document.querySelector('h2')?.textContent,
+        bodyText: document.body.textContent.substring(0, 500)
+      };
+    });
+    
+    console.log('🔍 Page analysis:', JSON.stringify(pageContent, null, 2));
+
+    // FATF-specific extraction with better error handling
     const fatfData = await page.evaluate((config) => {
       const results = [];
       const selectors = Array.isArray(config.titleSelector) ? 
         config.titleSelector : [config.titleSelector];
       
+      // Try all selectors until we find one that works
       for (const selector of selectors) {
         try {
           const elements = document.querySelectorAll(selector);
+          console.log(`Trying selector "${selector}": found ${elements.length} elements`);
+          
           for (const element of elements) {
             const text = element.textContent.trim();
             
-            if (text && text.length > 5) {
-              results.push({
-                title: text,
-                url: element.href || window.location.href,
-                source: config.name,
-                type: config.type
-              });
+            if (text && text.length > 3) {
+              // Basic filtering for country names
+              if (text.match(/[A-Z][a-z]+/) && !text.match(/menu|navigation|search|login/i)) {
+                results.push({
+                  country: text,
+                  source_url: window.location.href,
+                  scraped_at: new Date().toISOString()
+                });
+              }
             }
           }
+          
+          // If we found results with this selector, break early
+          if (results.length > 0) break;
+          
         } catch (e) {
+          console.warn(`Selector "${selector}" failed:`, e.message);
           continue;
         }
       }
@@ -75,13 +98,16 @@ export async function runScraper() {
 
     console.log(`📊 Found ${fatfData.length} FATF entries`);
 
-    // Process results
+    // Process and validate results
     const processedData = fatfData
       .map(item => ({
-        country: extractCountryName(item.title),
-        status: extractJurisdictionStatus(item.title),
-        source_url: item.url,
-        scraped_at: new Date().toISOString()
+        country: extractCountryName(item.country),
+        status: extractJurisdictionStatus(item.country),
+        source_url: item.source_url,
+        scraped_at: item.scraped_at,
+        metadata: {
+          original_text: item.country
+        }
       }))
       .filter(item => isValidJurisdiction(item.country));
 
@@ -105,10 +131,22 @@ export async function runScraper() {
         `🌍 FATF Update\n` +
         `📋 ${processedData.length} jurisdictions listed\n` +
         `🕒 ${new Date().toLocaleString()}\n` +
-        `#FATF #Compliance`
+        `#FATF #Compliance #HighRisk`
       );
     } else {
       console.log('⚠️ No valid FATF jurisdictions found');
+      
+      await supabase
+        .from('scraped_data')
+        .insert({
+          source: FATF_CONFIG.name,
+          data: [],
+          created_at: new Date().toISOString(),
+          item_count: 0,
+          status: 'no_data',
+          type: FATF_CONFIG.type,
+          notes: 'Scraper ran but found no valid jurisdictions'
+        });
     }
 
     console.log('✅ FATF scraping completed');
@@ -117,6 +155,17 @@ export async function runScraper() {
   } catch (error) {
     console.error('❌ FATF scraper error:', error.message);
     
+    await supabase
+      .from('scraped_data')
+      .insert({
+        source: FATF_CONFIG.name,
+        data: [],
+        created_at: new Date().toISOString(),
+        status: 'error',
+        type: FATF_CONFIG.type,
+        error_message: error.message
+      });
+
     await sendTelegramAlert(`❌ FATF Failed: ${error.message}`);
     throw error;
   } finally {
@@ -125,27 +174,70 @@ export async function runScraper() {
   }
 }
 
-// Helper functions (keep these the same)
-function extractCountryName(title) {
-  if (!title) return 'Unknown';
-  let cleaned = title.replace(/^(\d+\.\s*)/, '').trim();
+// Helper functions for FATF-specific processing
+function extractCountryName(text) {
+  if (!text) return 'Unknown';
+  
+  // Clean up the text - remove numbers, punctuation, etc.
+  let cleaned = text
+    .replace(/^(\d+[\.\)]\s*)/, '') // Remove numbering like "1. " or "1) "
+    .replace(/[\(\)\[\]\-\–\:]/g, '') // Remove various punctuation
+    .replace(/^[\s\W]+/, '') // Remove leading non-word characters
+    .replace(/[\s\W]+$/, '') // Remove trailing non-word characters
+    .trim();
+  
+  // Take only the first few words (country names are usually 1-3 words)
   const words = cleaned.split(/\s+/);
-  return words.length <= 5 ? cleaned : words.slice(0, 3).join(' ');
+  if (words.length <= 3) {
+    return cleaned;
+  }
+  
+  // For longer text, take the most relevant part (usually the beginning)
+  return words.slice(0, 3).join(' ');
 }
 
-function extractJurisdictionStatus(title) {
-  const lowerTitle = title.toLowerCase();
-  if (lowerTitle.includes('high risk') || lowerTitle.includes('blacklist')) return 'High Risk';
-  if (lowerTitle.includes('grey list') || lowerTitle.includes('increased monitoring')) return 'Increased Monitoring';
-  if (lowerTitle.includes('removed') || lowerTitle.includes('delisted')) return 'Removed';
+function extractJurisdictionStatus(text) {
+  const lowerText = text.toLowerCase();
+  
+  if (lowerText.includes('high risk') || lowerText.includes('blacklist')) {
+    return 'High Risk';
+  }
+  if (lowerText.includes('grey list') || lowerText.includes('increased monitoring')) {
+    return 'Increased Monitoring';
+  }
+  if (lowerText.includes('removed') || lowerText.includes('delisted')) {
+    return 'Removed';
+  }
+  
   return 'Listed';
 }
 
 function isValidJurisdiction(name) {
-  if (!name || name.length < 3 || name.length > 50) return false;
+  if (!name || name.length < 2 || name.length > 50) return false;
+  
   const lowerName = name.toLowerCase();
-  const excludedTerms = ['country', 'jurisdiction', 'list', 'table', 'menu', 'navigation'];
-  return !excludedTerms.some(term => lowerName.includes(term)) && /[A-Z]/.test(name);
+  const excludedTerms = [
+    'country', 'jurisdiction', 'list', 'table', 'content', 
+    'menu', 'navigation', 'footer', 'header', 'click', 'read more',
+    'high-risk', 'monitoring', 'fatf', 'gafi', 'www', 'http',
+    'home', 'about', 'contact', 'search', 'login', 'sign'
+  ];
+  
+  if (excludedTerms.some(term => lowerName.includes(term))) {
+    return false;
+  }
+  
+  // Should contain at least one capital letter (for country names)
+  if (!/[A-Z]/.test(name)) {
+    return false;
+  }
+  
+  // Should not be all uppercase (probably not a country name)
+  if (name === name.toUpperCase()) {
+    return false;
+  }
+  
+  return true;
 }
 
 export default runScraper;
