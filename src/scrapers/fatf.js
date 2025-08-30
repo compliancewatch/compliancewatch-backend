@@ -27,64 +27,59 @@ export async function runScraper() {
 
     page = await browser.newPage();
     
-    // Enhanced configuration
+    // Set realistic user agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1920, height: 1080 });
-    page.setDefaultNavigationTimeout(60000);
-    page.setDefaultTimeout(30000);
-
-    // Block unnecessary resources
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
+    
     console.log('🌐 Navigating to FATF website...');
     await page.goto('https://www.fatf-gafi.org/en/high-risk/', { 
       waitUntil: 'networkidle2',
       timeout: 60000
     });
 
-    await page.waitForTimeout(5000);
+    // Wait longer and try multiple selectors
+    await page.waitForTimeout(8000);
     
-    // Wait for specific content
-    try {
-      await page.waitForSelector('.high-risk-list', { timeout: 10000 });
-    } catch (error) {
-      console.warn('FATF specific selector not found, continuing...');
-    }
-
+    // Try multiple selector strategies
     const fatfData = await page.evaluate(() => {
-      try {
-        const items = Array.from(document.querySelectorAll('.high-risk-list li, .list-item, li'));
-        const results = [];
+      console.log('🔍 Scanning FATF page for data...');
+      
+      // Try multiple selector patterns
+      const selectors = [
+        '.high-risk-list li',
+        '.list-item',
+        'li',
+        '[class*="country"]',
+        '[class*="jurisdiction"]',
+        'table tr',
+        '.content li',
+        'div > ul > li'
+      ];
+      
+      const results = [];
+      
+      for (const selector of selectors) {
+        const elements = Array.from(document.querySelectorAll(selector));
+        console.log(`Found ${elements.length} elements with selector: ${selector}`);
         
-        for (const item of items) {
-          const countryElement = item.querySelector('h4, h3, h2, .country, [class*="country"]');
-          const reasonElement = item.querySelector('p, .reason, .description, [class*="reason"], [class*="description"]');
+        for (const element of elements) {
+          const text = element.textContent.trim();
           
-          if (countryElement && countryElement.textContent.trim()) {
+          // Look for country/jurisdiction patterns
+          if (text.length > 10 && (text.match(/[A-Z][a-z]+/) || text.includes('country') || text.includes('jurisdiction'))) {
             results.push({
-              country: countryElement.textContent.trim(),
-              reason: reasonElement ? reasonElement.textContent.trim() : 'No details provided',
-              updated: new Date().toLocaleDateString(),
-              source_url: window.location.href
+              country: text,
+              source_url: window.location.href,
+              scraped_at: new Date().toISOString()
             });
           }
         }
-        
-        return results;
-      } catch (e) {
-        console.error('FATF evaluation error:', e);
-        return [];
       }
+      
+      return results;
     });
 
-    console.log(`📊 Found ${fatfData.length} FATF entries`);
+    console.log(`📊 Found ${fatfData.length} potential FATF entries`);
 
     if (fatfData.length > 0) {
       const { error } = await supabase
@@ -106,8 +101,9 @@ export async function runScraper() {
         `#FATF #Compliance #HighRisk`
       );
     } else {
-      console.log('⚠️ No FATF entries found');
+      console.log('⚠️ No FATF entries found - may need selector adjustment');
       
+      // Log that we tried but found nothing
       await supabase
         .from('scraped_data')
         .insert({
@@ -115,7 +111,8 @@ export async function runScraper() {
           data: [],
           created_at: new Date().toISOString(),
           item_count: 0,
-          status: 'no_data'
+          status: 'no_data',
+          notes: 'Scraper ran but found no data with current selectors'
         });
     }
 
