@@ -16,8 +16,9 @@ export async function runGenericScraper(target) {
   try {
     console.log(`🔄 Starting: ${target.name} (${target.type})`);
     
-    // Enhanced browser configuration - UPDATED FOR RAILWAY
+    // Enhanced browser configuration - UPDATED FOR ALPINE LINUX
     browser = await puppeteer.launch({
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
