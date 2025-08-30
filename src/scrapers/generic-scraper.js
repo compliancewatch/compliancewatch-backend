@@ -9,7 +9,7 @@ export async function runGenericScraper(target) {
   try {
     console.log(`🔄 Starting: ${target.name}`);
     
-    // Enhanced browser configuration for Docker stability
+    // Enhanced browser configuration
     browser = await puppeteer.launch({
       executablePath: '/usr/bin/chromium-browser',
       args: [
@@ -19,28 +19,60 @@ export async function runGenericScraper(target) {
         '--disable-gpu',
         '--single-process',
         '--no-zygote',
-        '--disable-setuid-sandbox',
-        '--disable-features=VizDisplayCompositor',
-        '--disable-software-rasterizer',
         '--disable-web-security',
         '--disable-features=IsolateOrigins,site-per-process',
-        '--flag-switches-begin',
-        '--flag-switches-end'
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--window-size=1920,1080'
       ],
       headless: "new",
       ignoreHTTPSErrors: true,
-      timeout: 60000
+      timeout: 90000
     });
 
     page = await browser.newPage();
     
-    // Enhanced page configuration
+    // ================= ANTI-BOT EVASION =================
+    await page.setJavaScriptEnabled(true);
+    
+    // Set realistic user agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await page.setViewport({ width: 1920, height: 1080 });
-    page.setDefaultNavigationTimeout(60000);
-    page.setDefaultTimeout(30000);
+    
+    // Set extra headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1'
+    });
 
-    // Block unnecessary resources for faster loading
+    // Stealth scripts
+    await page.evaluateOnNewDocument(() => {
+      // Overwrite navigator properties
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      Object.defineProperty(navigator, 'plugins', { 
+        get: () => [{ name: 'Chrome PDF Plugin' }, { name: 'Chrome PDF Viewer' }]
+      });
+      
+      // Mock Chrome runtime
+      window.chrome = {
+        runtime: {},
+        loadTimes: () => {},
+        csi: () => {},
+        app: { isInstalled: false }
+      };
+    });
+
+    // Randomize viewport
+    await page.setViewport({ 
+      width: 1920,
+      height: 1080
+    });
+
+    // Block unnecessary resources
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
@@ -52,46 +84,57 @@ export async function runGenericScraper(target) {
     });
 
     console.log(`🌐 Navigating to: ${target.url}`);
+    
+    // Navigate with enhanced options
     await page.goto(target.url, { 
       waitUntil: 'networkidle2',
-      timeout: 60000
+      timeout: target.waitTimeout || 60000
     });
 
-    // Wait more strategically
-    await page.waitForTimeout(5000);
+    // Wait strategically
+    await page.waitForTimeout(target.stealth ? 8000 : 5000);
     
-    // Try to wait for content if selectors are specified
-    if (target.titleSelector) {
+    // Wait for specific content if specified
+    if (target.waitForSelector) {
       try {
-        await page.waitForSelector(target.titleSelector, { 
-          timeout: 10000,
+        await page.waitForSelector(target.waitForSelector, { 
+          timeout: 15000,
           visible: true 
         });
       } catch (e) {
-        console.warn(`Selector ${target.titleSelector} not found, continuing...`);
+        console.warn(`Wait selector ${target.waitForSelector} not found`);
       }
     }
 
+    // Take screenshot for debugging (optional)
+    // await page.screenshot({ path: `/tmp/${target.name.replace(/\s+/g, '_')}.png` });
+
     const scrapedData = await page.evaluate((target) => {
       try {
-        // More robust selector logic
-        const titles = Array.from(document.querySelectorAll(target.titleSelector || 'h1, h2, h3, h4, h5, h6, a, .title, .headline, [class*="title"], [class*="headline"]'));
-        const dates = Array.from(document.querySelectorAll(target.dateSelector || 'time, .date, .timestamp, [datetime], [class*="date"], [class*="time"]'));
+        // Robust content extraction
+        const titles = Array.from(document.querySelectorAll(target.titleSelector || 'h1, h2, h3, h4, h5, h6, a, .title, .headline'));
+        const dates = Array.from(document.querySelectorAll(target.dateSelector || 'time, .date, .timestamp, [datetime]'));
         
         const results = [];
-        const maxItems = 10;
+        const maxItems = 15;
         
         for (let i = 0; i < Math.min(titles.length, maxItems); i++) {
           const titleEl = titles[i];
-          const dateEl = dates[i] || dates[0]; // Fallback to first date
+          const dateEl = dates[i] || dates[0];
           
-          if (titleEl && titleEl.textContent && titleEl.textContent.trim().length > 5) {
-            results.push({
-              title: titleEl.textContent.trim(),
-              url: titleEl.href || window.location.href,
-              date: dateEl ? dateEl.textContent.trim() : new Date().toLocaleDateString(),
-              source: target.name
-            });
+          if (titleEl && titleEl.textContent && titleEl.textContent.trim().length > 10) {
+            const titleText = titleEl.textContent.trim();
+            const url = titleEl.href || window.location.href;
+            
+            // Filter out navigation/header links
+            if (!url.includes('#') && !titleText.match(/^(home|menu|login|sign|search)$/i)) {
+              results.push({
+                title: titleText,
+                url: url,
+                date: dateEl ? dateEl.textContent.trim() : new Date().toLocaleDateString(),
+                source: target.name
+              });
+            }
           }
         }
         
@@ -126,7 +169,6 @@ export async function runGenericScraper(target) {
     } else {
       console.log(`⚠️ ${target.name}: No data found`);
       
-      // Log empty result
       await supabase
         .from('scraped_data')
         .insert({
@@ -134,7 +176,8 @@ export async function runGenericScraper(target) {
           data: [],
           created_at: new Date().toISOString(),
           item_count: 0,
-          status: 'no_data'
+          status: 'no_data',
+          notes: 'Scraper ran but found no content with current selectors'
         });
     }
 
@@ -144,7 +187,6 @@ export async function runGenericScraper(target) {
   } catch (error) {
     console.error(`❌ ${target.name} error:`, error.message);
     
-    // Log error to database
     await supabase
       .from('scraped_data')
       .insert({
