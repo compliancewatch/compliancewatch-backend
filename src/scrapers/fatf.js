@@ -1,4 +1,4 @@
-// src/scrapers/fatf.js - UPDATED BROWSER LAUNCH
+// src/scrapers/fatf.js - UPDATED BROWSER LAUNCH FOR ALPINE
 import puppeteer from 'puppeteer';
 import { supabase } from '../services/database.js';
 import { sendTelegramAlert } from '../services/telegram-bot.js';
@@ -27,8 +27,9 @@ export async function runScraper() {
   try {
     console.log('🔄 Starting FATF-specific scraper...');
     
-    // UPDATED BROWSER LAUNCH FOR RAILWAY
+    // UPDATED BROWSER LAUNCH FOR ALPINE LINUX
     browser = await puppeteer.launch({
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
