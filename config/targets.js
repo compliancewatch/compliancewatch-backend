@@ -49,7 +49,7 @@ export const BUSINESS_TARGETS = [
   },
   {
     name: "Financial Times",
-    url:https://www.ft.com/",
+    url: "https://www.ft.com/",
     titleSelector: "h1, h2, h3, h4, a, .js-teaser-heading-link",
     dateSelector: "time, [datetime], .o-date",
     type: "business",
