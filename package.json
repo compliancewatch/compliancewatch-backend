@@ -4,9 +4,7 @@
   "main": "src/bootstrap.js",
   "type": "module",
   "scripts": {
-    "start": "NODE_ENV=production node src/bootstrap.js",
-    "scrape": "node src/scrapers/fatf.js",
-    "healthcheck": "node -e \"import('./src/services/database.js').then(db => db.testConnection())\""
+    "start": "node test-targets.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.8",
